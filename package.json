@@ -1,6 +1,6 @@
 {
   "name": "rustbrowse",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "RustBrowse - High-performance lightweight browser",
   "private": true,
   "scripts": {

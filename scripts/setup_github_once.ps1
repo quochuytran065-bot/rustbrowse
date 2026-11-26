@@ -88,7 +88,8 @@ $Conf = Get-Content $TauriConfPath -Raw | ConvertFrom-Json
 $Endpoint = "https://github.com/$FullRepo/releases/latest/download/latest.json"
 $Conf.plugins.updater.pubkey = $PubKey
 $Conf.plugins.updater.endpoints = @($Endpoint)
-$Conf | ConvertTo-Json -Depth 10 | Set-Content -Path $TauriConfPath -Encoding UTF8
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($TauriConfPath, ($Conf | ConvertTo-Json -Depth 10) + "`n", $Utf8NoBom)
 Write-Host "    Endpoint: $Endpoint" -ForegroundColor Green
 
 Write-Host "==> [5/5] Uploading TAURI_SIGNING_PRIVATE_KEY to GitHub Actions Secrets..." -ForegroundColor Cyan

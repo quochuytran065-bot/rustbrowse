@@ -1,48 +1,48 @@
-﻿{
-    "$schema":  "https://schema.tauri.app/config/2",
-    "productName":  "RustBrowse",
-    "version":  "1.0.0",
-    "identifier":  "com.rustbrowse.app",
-    "build":  {
-                  "frontendDist":  "../ui"
-              },
-    "app":  {
-                "withGlobalTauri":  true,
-                "windows":  [
-                                {
-                                    "title":  "RustBrowse",
-                                    "width":  1280,
-                                    "height":  800,
-                                    "minWidth":  600,
-                                    "minHeight":  400,
-                                    "decorations":  true,
-                                    "center":  true,
-                                    "backgroundColor":  "#0d0f14"
-                                }
-                            ],
-                "security":  {
-                                 "csp":  null
-                             }
-            },
-    "bundle":  {
-                   "active":  true,
-                   "createUpdaterArtifacts":  true,
-                   "targets":  [
-                                   "nsis"
-                               ],
-                   "icon":  [
-                                "icons/32x32.png",
-                                "icons/128x128.png",
-                                "icons/128x128@2x.png",
-                                "icons/icon.ico"
-                            ]
-               },
-    "plugins":  {
-                    "updater":  {
-                                    "pubkey":  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc5NjkzMkEyRDAwRkZDOTAKUldTUS9BL1FvakpwZVFadEN0YmQzcDB3TElna1VMSGE3UDJqeGZuOVlSazI5Qzl4R0M0SG5PNmIK",
-                                    "endpoints":  [
-                                                      "https://github.com/quochuytran065-bot/rustbrowse/releases/latest/download/latest.json"
-                                                  ]
-                                }
-                }
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "RustBrowse",
+  "version": "1.0.2",
+  "identifier": "com.rustbrowse.app",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "RustBrowse",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 600,
+        "minHeight": 400,
+        "decorations": true,
+        "center": true,
+        "backgroundColor": "#0d0f14"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc5NjkzMkEyRDAwRkZDOTAKUldTUS9BL1FvakpwZVFadEN0YmQzcDB3TElna1VMSGE3UDJqeGZuOVlSazI5Qzl4R0M0SG5PNmIK",
+      "endpoints": [
+        "https://github.com/quochuytran065-bot/rustbrowse/releases/latest/download/latest.json"
+      ]
+    }
+  }
 }

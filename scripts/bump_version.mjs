@@ -27,9 +27,13 @@ const FILES = {
 
 const SEMVER_RE = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
 
+function readJsonUtf8(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, ''));
+}
+
 function readVersions() {
-  const pkg = JSON.parse(fs.readFileSync(FILES.pkg, 'utf8'));
-  const tauriConf = JSON.parse(fs.readFileSync(FILES.tauriConf, 'utf8'));
+  const pkg = readJsonUtf8(FILES.pkg);
+  const tauriConf = readJsonUtf8(FILES.tauriConf);
   const tauriCargoRaw = fs.readFileSync(FILES.tauriCargo, 'utf8');
   const mTauri = tauriCargoRaw.match(/^\[package\][\s\S]*?^version\s*=\s*"([^"]+)"/m);
   if (!mTauri) throw new Error('Could not parse [package].version in src-tauri/Cargo.toml');
@@ -140,12 +144,12 @@ const current = currentMap['src-tauri/tauri.conf.json'];
 const next = computeNextVersion(current, spec.replace(/^v/, ''));
 
 // 1. package.json
-const pkgJson = JSON.parse(fs.readFileSync(FILES.pkg, 'utf8'));
+const pkgJson = readJsonUtf8(FILES.pkg);
 pkgJson.version = next;
 fs.writeFileSync(FILES.pkg, JSON.stringify(pkgJson, null, 2) + '\n', 'utf8');
 
 // 2. src-tauri/tauri.conf.json
-const tauriJson = JSON.parse(fs.readFileSync(FILES.tauriConf, 'utf8'));
+const tauriJson = readJsonUtf8(FILES.tauriConf);
 tauriJson.version = next;
 fs.writeFileSync(FILES.tauriConf, JSON.stringify(tauriJson, null, 2) + '\n', 'utf8');
 
