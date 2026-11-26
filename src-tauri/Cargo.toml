@@ -1,0 +1,49 @@
+[package]
+name = "rustbrowse"
+version = "1.0.0"
+edition = "2021"
+authors = ["Senior Rust & Windows Systems Engineer"]
+default-run = "rustbrowse"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["unstable"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "fs", "io-util", "process"] }
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "stream"] }
+futures-util = "0.3"
+rusqlite = { version = "0.33", features = ["bundled"] }
+adblock = "0.13.6"
+regex = "1.11"
+aho-corasick = "1.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2.5"
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39.1"
+
+[dependencies.windows]
+version = "0.60.0"
+features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Gdi",
+]
+
+[profile.release]
+lto = true
+opt-level = 3
+strip = true
+codegen-units = 1
+
+[workspace]

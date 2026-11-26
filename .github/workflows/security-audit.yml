@@ -1,0 +1,52 @@
+name: Security Audit — Secrets, Binaries & RustSec Advisories
+
+on:
+  push:
+    branches:
+      - main
+      - superboost-v5
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  security-gate:
+    name: Repository Hygiene & Rust Dependency Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Block committed secrets, private keys, and stray binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          FORBIDDEN_FILES=$(git ls-files | grep -E '(\.env($|\.)|\.pem$|\.pfx$|\.key$|id_rsa|id_ed25519|\.exe$|\.dll$)' || true)
+          if [ -n "$FORBIDDEN_FILES" ]; then
+            echo "ERROR: Forbidden binary or key file tracked in Git:"
+            echo "$FORBIDDEN_FILES"
+            exit 1
+          fi
+
+          if git grep -nE '(PRIVATE KEY-----|ghp_[A-Za-z0-9]{30,}|gho_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})' -- ':!.github/workflows/security-audit.yml' ':!scripts/auto_push_release.ps1'; then
+            echo "ERROR: Potential secret or private signing key detected in tracked source!"
+            exit 1
+          fi
+          echo "Repository secret & binary hygiene check passed."
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+
+      - name: Run cargo-audit against RustSec Advisory Database
+        working-directory: src-tauri
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit

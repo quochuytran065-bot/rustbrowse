@@ -1,0 +1,82 @@
+[workspace]
+resolver = "2"
+members = [
+    "apps/rustbrowse",
+    "crates/common",
+    "crates/engine-webview2",
+    "crates/shell",
+    "crates/tab-manager",
+    "crates/resource-manager",
+    "crates/session-manager",
+    "crates/download-manager",
+    "crates/privacy-manager",
+    "crates/adblock-engine",
+    "crates/profile-manager",
+    "crates/storage",
+    "crates/telemetry",
+]
+
+[workspace.metadata]
+
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+authors = ["Senior Rust & Windows Systems Engineer"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# Internal workspace crates
+common = { path = "crates/common" }
+engine-webview2 = { path = "crates/engine-webview2" }
+shell = { path = "crates/shell" }
+tab-manager = { path = "crates/tab-manager" }
+resource-manager = { path = "crates/resource-manager" }
+session-manager = { path = "crates/session-manager" }
+download-manager = { path = "crates/download-manager" }
+privacy-manager = { path = "crates/privacy-manager" }
+adblock-engine = { path = "crates/adblock-engine" }
+profile-manager = { path = "crates/profile-manager" }
+storage = { path = "crates/storage" }
+telemetry = { path = "crates/telemetry" }
+
+# Logging and Diagnostics
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+adblock = "0.13.6"
+
+# Async runtime & serialization
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2.0"
+url = "2.5"
+
+# Windows & WebView2
+windows-window = "0.100.0"
+windows-webview = "0.100.0"
+webview2-com = "0.39.1"
+
+# Storage
+rusqlite = { version = "0.32", features = ["bundled"] }
+windows = { version = "0.60.0", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Threading",
+    "Win32_System_SystemInformation",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory"
+] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

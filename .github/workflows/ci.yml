@@ -1,0 +1,92 @@
+name: CI — Format, Lint, Test & Windows Build
+
+on:
+  push:
+    branches:
+      - main
+      - superboost-v5
+      - 'feat/**'
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+# Principle of least privilege: CI never needs write permissions or signing secrets
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-build:
+    name: Rust Fmt, Clippy, Unit Tests & NSIS Verification (Windows x64)
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Install Rust stable toolchain (rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Restore Rust build cache
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Verify synchronized Semantic Versioning across manifests
+        shell: pwsh
+        run: node scripts/bump_version.mjs --check
+
+      - name: Verify JavaScript syntax (Topbar & injected scripts)
+        shell: pwsh
+        run: |
+          node --check ui/app.js
+          Get-ChildItem src-tauri/scripts/*.js | ForEach-Object {
+            node --check $_.FullName
+          }
+
+      - name: Check Rust formatting
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy linter
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run unit & integration tests
+        working-directory: src-tauri
+        run: cargo test --locked
+
+      - name: Install Tauri CLI
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install }
+
+      - name: Build Windows x64 NSIS installer (unsigned CI verification)
+        shell: pwsh
+        run: |
+          $tmpCfg = Join-Path $env:RUNNER_TEMP "tauri.ci.unsigned.json"
+          '{"bundle":{"createUpdaterArtifacts":false}}' | Set-Content -Path $tmpCfg -Encoding UTF8
+          npx @tauri-apps/cli build --target x86_64-pc-windows-msvc --bundles nsis --config $tmpCfg
+
+      - name: Verify compiled EXE and NSIS Setup output
+        shell: pwsh
+        run: |
+          $exe = Get-Item "src-tauri/target/x86_64-pc-windows-msvc/release/rustbrowse.exe" -ErrorAction Stop
+          if ($exe.Length -lt 1048576) { throw "Binary size unexpectedly small: $($exe.Length)" }
+          $nsis = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
+          if (-not $nsis -or $nsis.Length -lt 1048576) { throw "NSIS installer missing or invalid!" }
+          Write-Host "Verified binary ($($exe.Length) bytes) & installer ($($nsis.Name), $($nsis.Length) bytes)."

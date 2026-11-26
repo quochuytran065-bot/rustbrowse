@@ -1,0 +1,13 @@
+[package]
+name = "shell"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+common = { workspace = true }
+windows-window = { workspace = true }
+windows = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }

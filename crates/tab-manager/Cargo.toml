@@ -1,0 +1,11 @@
+[package]
+name = "tab-manager"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+common = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }

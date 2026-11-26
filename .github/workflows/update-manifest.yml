@@ -1,0 +1,40 @@
+name: Update Channel Manifest Inspector & Beta Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag whose latest.json should be validated (e.g. v1.1.0-beta.1)'
+        required: true
+        type: string
+      sync_beta_alias:
+        description: 'Also publish/update rolling beta channel manifest tag (beta)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  validate-manifest:
+    name: Validate Signed Release Manifest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: ${{ inputs.sync_beta_alias && 'write' || 'read' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Download and verify latest.json from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/manifest-check
+          gh release download "${{ inputs.tag }}" --pattern "latest.json" --dir /tmp/manifest-check
+          jq -e '.version and .platforms["windows-x86_64"].url and .platforms["windows-x86_64"].signature' /tmp/manifest-check/latest.json
+          if [[ "${{ inputs.sync_beta_alias }}" == "true" ]]; then
+            gh release view beta >/dev/null 2>&1 || gh release create beta --prerelease --title "RustBrowse Beta Channel" --notes "Rolling Beta update manifest endpoint."
+            gh release upload beta /tmp/manifest-check/latest.json --clobber
+          fi

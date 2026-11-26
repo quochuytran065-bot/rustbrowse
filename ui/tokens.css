@@ -1,0 +1,164 @@
+/* ============================================================================
+   RustBrowse Design Tokens (ui/tokens.css)
+   Inspired by open-design (token structure, contrast) & animate-ui (spring motion)
+   Zero-dependency CSS custom properties | GPU-only compositor transitions
+   ============================================================================ */
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Typography */
+  --rb-font-sans: "Segoe UI Variable Display", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  --rb-font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  --rb-text-2xs: 10px;
+  --rb-text-xs: 11px;
+  --rb-text-sm: 12px;
+  --rb-text-base: 13px;
+  --rb-text-md: 14px;
+  --rb-text-lg: 16px;
+  --rb-text-xl: 20px;
+  --rb-text-2xl: 28px;
+
+  /* Spacing & Radii */
+  --rb-radius-xs: 5px;
+  --rb-radius-sm: 8px;
+  --rb-radius-md: 12px;
+  --rb-radius-lg: 16px;
+  --rb-radius-pill: 9999px;
+
+  /* Motion (animate-ui spring physics in pure CSS) */
+  --rb-ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --rb-ease-snappy: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --rb-dur-fast: 140ms;
+  --rb-dur-base: 180ms;
+  --rb-dur-slow: 220ms;
+
+  /* Bright Glass Surfaces */
+  --rb-bg-shell: linear-gradient(180deg, #e7eef6 0%, #eef3f9 100%);
+  --rb-bg-shell-solid: #ebf1f7;
+  --rb-bg-toolbar: rgba(255, 255, 255, 0.88);
+  --rb-bg-tab: rgba(255, 255, 255, 0.45);
+  --rb-bg-tab-hover: rgba(255, 255, 255, 0.78);
+  --rb-bg-tab-active: #ffffff;
+  --rb-bg-capsule: rgba(244, 248, 252, 0.96);
+  --rb-bg-capsule-focus: #ffffff;
+  --rb-bg-overlay: rgba(255, 255, 255, 0.96);
+  --rb-bg-card: rgba(255, 255, 255, 0.84);
+  --rb-bg-elevated: #f3f7fb;
+  --rb-bg-hover: rgba(15, 23, 42, 0.06);
+  --rb-bg-active: rgba(15, 23, 42, 0.11);
+
+  /* Borders */
+  --rb-border-subtle: rgba(15, 23, 42, 0.07);
+  --rb-border-default: rgba(15, 23, 42, 0.11);
+  --rb-border-strong: rgba(15, 23, 42, 0.18);
+  --rb-border-accent: rgba(14, 165, 164, 0.45);
+
+  /* Text */
+  --rb-text-primary: #0f172a;
+  --rb-text-secondary: #475569;
+  --rb-text-muted: #64748b;
+  --rb-text-inverse: #ffffff;
+
+  /* Semantic Accents */
+  --rb-accent: #0d9488;
+  --rb-accent-hover: #0f766e;
+  --rb-accent-soft: rgba(13, 148, 136, 0.12);
+  --rb-blue: #2563eb;
+  --rb-blue-soft: rgba(37, 99, 235, 0.12);
+  --rb-success: #059669;
+  --rb-success-soft: rgba(5, 150, 105, 0.12);
+  --rb-warning: #d97706;
+  --rb-warning-soft: rgba(217, 119, 6, 0.13);
+  --rb-danger: #e11d48;
+  --rb-danger-soft: rgba(225, 29, 72, 0.12);
+  --rb-purple: #7c3aed;
+  --rb-purple-soft: rgba(124, 58, 237, 0.12);
+
+  /* Shadows */
+  --rb-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --rb-shadow-md: 0 6px 20px rgba(15, 23, 42, 0.09);
+  --rb-shadow-lg: 0 14px 34px rgba(15, 23, 42, 0.16);
+  --rb-shadow-island: 0 2px 10px rgba(15, 23, 42, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --rb-shadow-focus: 0 0 0 2px rgba(13, 148, 136, 0.28);
+
+  /* Dynamic Island Dark Accent Pill (optional contrast pill for events) */
+  --rb-island-chip-bg: #0f172a;
+  --rb-island-chip-text: #f8fafc;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Midnight Dark Surfaces */
+  --rb-bg-shell: linear-gradient(180deg, #090c12 0%, #0e121b 100%);
+  --rb-bg-shell-solid: #0b0e15;
+  --rb-bg-toolbar: #141925;
+  --rb-bg-tab: rgba(255, 255, 255, 0.04);
+  --rb-bg-tab-hover: rgba(255, 255, 255, 0.08);
+  --rb-bg-tab-active: #1c2333;
+  --rb-bg-capsule: #0d111a;
+  --rb-bg-capsule-focus: #0a0e16;
+  --rb-bg-overlay: rgba(18, 23, 34, 0.97);
+  --rb-bg-card: rgba(22, 28, 42, 0.88);
+  --rb-bg-elevated: #1b2232;
+  --rb-bg-hover: rgba(255, 255, 255, 0.08);
+  --rb-bg-active: rgba(255, 255, 255, 0.14);
+
+  /* Borders */
+  --rb-border-subtle: rgba(255, 255, 255, 0.06);
+  --rb-border-default: rgba(255, 255, 255, 0.1);
+  --rb-border-strong: rgba(255, 255, 255, 0.18);
+  --rb-border-accent: rgba(45, 212, 191, 0.5);
+
+  /* Text */
+  --rb-text-primary: #f1f5f9;
+  --rb-text-secondary: #94a3b8;
+  --rb-text-muted: #64748b;
+  --rb-text-inverse: #090c12;
+
+  /* Semantic Accents */
+  --rb-accent: #2dd4bf;
+  --rb-accent-hover: #14b8a6;
+  --rb-accent-soft: rgba(45, 212, 191, 0.14);
+  --rb-blue: #3b82f6;
+  --rb-blue-soft: rgba(59, 130, 246, 0.16);
+  --rb-success: #10b981;
+  --rb-success-soft: rgba(16, 185, 129, 0.15);
+  --rb-warning: #f59e0b;
+  --rb-warning-soft: rgba(245, 158, 11, 0.16);
+  --rb-danger: #f43f5e;
+  --rb-danger-soft: rgba(244, 63, 94, 0.16);
+  --rb-purple: #a78bfa;
+  --rb-purple-soft: rgba(167, 139, 250, 0.16);
+
+  /* Shadows */
+  --rb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --rb-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --rb-shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.62);
+  --rb-shadow-island: 0 2px 12px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --rb-shadow-focus: 0 0 0 2px rgba(45, 212, 191, 0.32);
+
+  --rb-island-chip-bg: #1e293b;
+  --rb-island-chip-text: #f8fafc;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  [data-theme="light"],
+  [data-theme="dark"] {
+    --rb-dur-fast: 0.01ms;
+    --rb-dur-base: 0.01ms;
+    --rb-dur-slow: 0.01ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

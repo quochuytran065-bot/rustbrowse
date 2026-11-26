@@ -1,0 +1,12 @@
+{
+  "name": "rustbrowse",
+  "version": "1.0.0",
+  "description": "RustBrowse - High-performance lightweight browser",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.0"
+  }
+}

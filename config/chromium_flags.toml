@@ -1,0 +1,16 @@
+# Chromium flags configuration for RustBrowse
+# Optimized for 4 GB RAM machines running Microsoft Edge WebView2
+
+# Additional verified Chromium arguments
+# Default: Keep minimal. Flags are tested via A/B benchmarks.
+additional_args = [
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--no-first-run"
+]
+
+# Renderer process limit (optional: uncomment to restrict max renderers)
+# renderer_process_limit = 3
+
+# Disable background networking tasks
+disable_background_networking = true

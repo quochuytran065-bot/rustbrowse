@@ -1,0 +1,195 @@
+name: Release — Signed Windows Desktop & Auto-Updater Manifest
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to build & publish (e.g. v1.0.1)'
+        required: true
+        type: string
+
+# Default read-only; write granted ONLY to publish job after gates pass
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pre-release-gate:
+    name: Pre-Release Gate (Version Match, Fmt, Clippy, Tests & Key Check)
+    runs-on: windows-latest
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 25
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+      is_prerelease: ${{ steps.ver.outputs.is_prerelease }}
+
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Validate tag, SemVer sync, and public updater key
+        id: ver
+        shell: pwsh
+        run: |
+          $rawTag = if ("${{ github.event.inputs.tag }}" -ne "") { "${{ github.event.inputs.tag }}" } else { "${{ github.ref_name }}" }
+          if ($rawTag -notmatch '^v(\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?)$') {
+            throw "Invalid semantic version tag: $rawTag (expected vMAJOR.MINOR.PATCH)"
+          }
+          $expectedVer = $Matches[1]
+          node scripts/bump_version.mjs --check --expect $expectedVer
+
+          $tauriConf = Get-Content "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+          $pubkey = "$($tauriConf.plugins.updater.pubkey)".Trim()
+          if ([string]::IsNullOrWhiteSpace($pubkey)) {
+            throw "Refusing unsigned release: plugins.updater.pubkey in src-tauri/tauri.conf.json is empty! Run scripts/setup_github_once.ps1 first."
+          }
+
+          $isPre = if ($expectedVer -match '-') { 'true' } else { 'false' }
+          "version=$expectedVer" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "tag=$rawTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "is_prerelease=$isPre" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Restore Rust build cache
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Run formatting, Clippy, and unit tests
+        working-directory: src-tauri
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test --locked
+
+  publish-windows-release:
+    name: Build, Sign & Publish GitHub Release + latest.json
+    needs: pre-release-gate
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Restore Rust build cache
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Verify signing secret presence
+        shell: pwsh
+        env:
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          if ($env:HAS_KEY -ne 'true') {
+            throw "Missing GitHub Actions Secret TAURI_SIGNING_PRIVATE_KEY! Run scripts/setup_github_once.ps1 to configure it securely."
+          }
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install }
+
+      - name: Generate automatic release notes from Git commits
+        id: notes
+        shell: pwsh
+        run: |
+          $prevTag = git describe --tags --abbrev=0 "HEAD^" 2>$null
+          if ($LASTEXITCODE -eq 0 -and $prevTag) {
+            $commits = git log "$prevTag..HEAD" --pretty=format:"- %s (%h)"
+          } else {
+            $commits = git log -n 20 --pretty=format:"- %s (%h)"
+          }
+          $body = "## RustBrowse ${{ needs.pre-release-gate.outputs.tag }}`n`n### Changes`n$commits`n`n### Auto-Update`nDesktop installations update automatically in the background via Ed25519-signed `latest.json`."
+          $delimiter = "EOF_$([Guid]::NewGuid().ToString('N'))"
+          "body<<$delimiter" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          $body | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          $delimiter | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build signed NSIS installer & publish latest.json
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ needs.pre-release-gate.outputs.tag }}
+          releaseName: 'RustBrowse v${{ needs.pre-release-gate.outputs.version }}'
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: false
+          prerelease: ${{ needs.pre-release-gate.outputs.is_prerelease == 'true' }}
+          includeUpdaterJson: true
+          args: --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: Generate SHA256SUMS.txt & verify published GitHub Release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ needs.pre-release-gate.outputs.tag }}"
+          $expectedVer = "${{ needs.pre-release-gate.outputs.version }}"
+          $bundleDir = "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+          $files = Get-ChildItem "$bundleDir/*" -Include *.exe, *.zip, *.sig
+          $sumsFile = Join-Path $env:RUNNER_TEMP "SHA256SUMS.txt"
+          $lines = foreach ($f in $files) {
+            $h = (Get-FileHash -Algorithm SHA256 $f.FullName).Hash.ToLower()
+            "$h  $($f.Name)"
+          }
+          $lines | Set-Content -Path $sumsFile -Encoding UTF8
+          gh release upload $tag $sumsFile --clobber
+
+          # Verify release assets & validate latest.json manifest structure
+          $verifyDir = Join-Path $env:RUNNER_TEMP "verify-release"
+          New-Item -ItemType Directory -Path $verifyDir -Force | Out-Null
+          gh release download $tag --pattern "latest.json" --dir $verifyDir
+          $manifest = Get-Content (Join-Path $verifyDir "latest.json") -Raw | ConvertFrom-Json
+
+          if ($manifest.version -replace '^v','' -ne $expectedVer) {
+            throw "Manifest version mismatch: got $($manifest.version), expected $expectedVer"
+          }
+          $winPlatform = $manifest.platforms.'windows-x86_64'
+          if (-not $winPlatform) {
+            throw "latest.json missing windows-x86_64 platform entry!"
+          }
+          if ("$($winPlatform.url)" -notmatch '^https://') {
+            throw "latest.json asset URL is not HTTPS: $($winPlatform.url)"
+          }
+          if ([string]::IsNullOrWhiteSpace("$($winPlatform.signature)")) {
+            throw "latest.json signature is empty!"
+          }
+          Write-Host "Release $tag verified: signed NSIS, SHA256SUMS.txt, and valid HTTPS latest.json."

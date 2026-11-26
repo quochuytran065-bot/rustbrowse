@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RustBrowse Overlay</title>
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      font-family: var(--rb-font-sans);
+      color: var(--rb-text-primary);
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .overlay-shell {
+      width: 100%;
+      height: 100%;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-card {
+      flex: 1;
+      min-height: 0;
+      background: var(--rb-bg-overlay);
+      border: 1px solid var(--rb-border-default);
+      border-radius: var(--rb-radius-lg);
+      box-shadow: var(--rb-shadow-lg);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: rb-pop var(--rb-dur-base) var(--rb-ease-spring);
+    }
+
+    @keyframes rb-pop {
+      0% { opacity: 0; transform: translateY(-6px) scale(0.97); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px 10px;
+      border-bottom: 1px solid var(--rb-border-subtle);
+      flex-shrink: 0;
+    }
+
+    .panel-title {
+      font-size: var(--rb-text-md);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-close {
+      width: 24px;
+      height: 24px;
+      border-radius: var(--rb-radius-sm);
+      border: none;
+      background: transparent;
+      color: var(--rb-text-muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+
+    .panel-close:hover {
+      background: var(--rb-bg-hover);
+      color: var(--rb-text-primary);
+    }
+
+    .panel-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .panel-body::-webkit-scrollbar {
+      width: 5px;
+    }
+    .panel-body::-webkit-scrollbar-thumb {
+      background: var(--rb-border-strong);
+      border-radius: 99px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .metric-box {
+      background: var(--rb-bg-elevated);
+      border: 1px solid var(--rb-border-subtle);
+      border-radius: var(--rb-radius-md);
+      padding: 10px 12px;
+    }
+
+    .metric-val {
+      font-size: 18px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--rb-text-primary);
+    }
+
+    .metric-lbl {
+      font-size: var(--rb-text-xs);
+      color: var(--rb-text-muted);
+      margin-top: 2px;
+    }
+
+    .breakdown-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      font-size: var(--rb-text-xs);
+      color: var(--rb-text-secondary);
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: var(--rb-radius-pill);
+      background: var(--rb-bg-elevated);
+      border: 1px solid var(--rb-border-subtle);
+      font-size: var(--rb-text-xs);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .chip-accent { background: var(--rb-accent-soft); color: var(--rb-accent); border-color: transparent; }
+    .chip-success { background: var(--rb-success-soft); color: var(--rb-success); border-color: transparent; }
+    .chip-warning { background: var(--rb-warning-soft); color: var(--rb-warning); border-color: transparent; }
+    .chip-danger { background: var(--rb-danger-soft); color: var(--rb-danger); border-color: transparent; }
+
+    .seg-control {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      background: var(--rb-bg-elevated);
+      padding: 3px;
+      border-radius: var(--rb-radius-sm);
+      border: 1px solid var(--rb-border-subtle);
+    }
+
+    .seg-btn {
+      border: none;
+      background: transparent;
+      color: var(--rb-text-secondary);
+      font-size: var(--rb-text-xs);
+      font-weight: 600;
+      padding: 5px 6px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .seg-btn.active {
+      background: var(--rb-bg-tab-active);
+      color: var(--rb-accent);
+      box-shadow: var(--rb-shadow-sm);
+    }
+
+    .list-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .list-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: var(--rb-radius-sm);
+      background: var(--rb-bg-elevated);
+      border: 1px solid var(--rb-border-subtle);
+    }
+
+    .list-row-info {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .list-row-title {
+      font-size: var(--rb-text-sm);
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .list-row-sub {
+      font-size: var(--rb-text-xs);
+      color: var(--rb-text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 12px;
+      border-radius: var(--rb-radius-sm);
+      border: 1px solid var(--rb-border-default);
+      background: var(--rb-bg-elevated);
+      color: var(--rb-text-primary);
+      font-size: var(--rb-text-xs);
+      font-weight: 600;
+      font-family: var(--rb-font-sans);
+      cursor: pointer;
+      transition: transform var(--rb-dur-fast) var(--rb-ease-spring);
+    }
+
+    .btn:hover {
+      background: var(--rb-bg-hover);
+    }
+
+    .btn:active {
+      transform: scale(0.96);
+    }
+
+    .btn-primary {
+      background: var(--rb-accent);
+      color: #ffffff;
+      border-color: transparent;
+    }
+
+    .btn-primary:hover {
+      background: var(--rb-accent-hover);
+    }
+
+    .btn-sm {
+      padding: 4px 8px;
+      font-size: var(--rb-text-2xs);
+    }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .menu-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-radius: var(--rb-radius-sm);
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--rb-text-primary);
+      font-size: var(--rb-text-base);
+      font-weight: 500;
+      font-family: var(--rb-font-sans);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .menu-item:hover {
+      background: var(--rb-bg-hover);
+      border-color: var(--rb-border-subtle);
+    }
+
+    .menu-sep {
+      height: 1px;
+      background: var(--rb-border-subtle);
+      margin: 2px 0;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 18px 10px;
+      color: var(--rb-text-muted);
+      font-size: var(--rb-text-sm);
+    }
+
+    .status-note {
+      font-size: var(--rb-text-xs);
+      color: var(--rb-accent);
+      font-weight: 600;
+      min-height: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="overlay-shell">
+    <div class="panel-card">
+      <div class="panel-header">
+        <div class="panel-title" id="panel-title">RustBrowse</div>
+        <button class="panel-close" id="btn-close-overlay" title="Đóng (Esc)">&times;</button>
+      </div>
+      <div class="panel-body" id="panel-body">
+        <div class="empty-state">Đang tải dữ liệu...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      async function invoke(cmd, args) {
+        try {
+          if (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function') {
+            return await window.__TAURI__.core.invoke(cmd, args || {});
+          }
+          if (window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === 'function') {
+            return await window.__TAURI_INTERNALS__.invoke(cmd, args || {});
+          }
+        } catch (err) {
+          console.error('[Overlay IPC]', cmd, err);
+        }
+        return null;
+      }
+
+      function syncTheme() {
+        const t = localStorage.getItem('rustbrowse-theme') || 'light';
+        document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
+      }
+      syncTheme();
+      window.addEventListener('storage', syncTheme);
+
+      const titleEl = document.getElementById('panel-title');
+      const bodyEl = document.getElementById('panel-body');
+      const btnClose = document.getElementById('btn-close-overlay');
+
+      let currentPanel = new URLSearchParams(location.search).get('panel') || 'ram';
+
+      function closeOverlay() {
+        invoke('close_overlay');
+      }
+
+      if (btnClose) btnClose.addEventListener('click', closeOverlay);
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeOverlay();
+      });
+
+      window.addEventListener('blur', () => {
+        setTimeout(() => {
+          if (!document.hasFocus()) closeOverlay();
+        }, 120);
+      });
+
+      function esc(str) {
+        return String(str == null ? '' : str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      // ---- Panel 1: Real Live RAM Monitor ----
+      async function renderRamPanel() {
+        titleEl.textContent = 'RAM Monitor & Auto-Clean';
+        const [mem, tabs] = await Promise.all([
+          invoke('get_memory_report'),
+          invoke('list_tabs'),
+        ]);
+
+        const wsMb = mem ? Math.round(mem.totalWorkingSetMb || 0) : 0;
+        const privMb = mem ? Math.round(mem.totalPrivateMb || 0) : 0;
+        const browserMb = mem ? Math.round(mem.browserMb || 0) : 0;
+        const gpuMb = mem ? Math.round(mem.gpuMb || 0) : 0;
+        const rendererMb = mem ? Math.round(mem.rendererMb || 0) : 0;
+        const level = (mem && mem.autoCleanLevel) ? String(mem.autoCleanLevel).toLowerCase() : 'balanced';
+        const tabList = Array.isArray(tabs) ? tabs : [];
+
+        bodyEl.innerHTML = `
+          <div class="metric-grid">
+            <div class="metric-box">
+              <div class="metric-val">${wsMb} MB</div>
+              <div class="metric-lbl">Working Set Thực Tế</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-val">${privMb} MB</div>
+              <div class="metric-lbl">Private Usage (Win32)</div>
+            </div>
+          </div>
+
+          <div class="breakdown-row">
+            <span class="chip">Browser: ${browserMb} MB</span>
+            <span class="chip">GPU: ${gpuMb} MB</span>
+            <span class="chip">Renderer: ${rendererMb} MB</span>
+            <span class="chip">Tiến trình: ${mem ? (mem.processCount || 0) : 0}</span>
+          </div>
+
+          <div>
+            <div class="metric-lbl" style="margin-bottom:5px;">Chế độ Auto-Clean An Toàn (Cooldown 60s)</div>
+            <div class="seg-control" id="autoclean-seg">
+              <button class="seg-btn ${level === 'off' ? 'active' : ''}" data-level="off">Tắt</button>
+              <button class="seg-btn ${level === 'balanced' ? 'active' : ''}" data-level="balanced">Cân bằng</button>
+              <button class="seg-btn ${level === 'aggressive' ? 'active' : ''}" data-level="aggressive">Mạnh</button>
+            </div>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn btn-primary" id="btn-ram-clean-now">Xả RAM ngay</button>
+            <button class="btn" id="btn-ram-sleep-all">Ngủ tab nền</button>
+            <button class="btn" id="btn-ram-dashboard">Dashboard</button>
+          </div>
+          <div class="status-note" id="ram-status-note"></div>
+
+          <div class="list-group">
+            ${tabList.length === 0 ? '<div class="empty-state">Chưa có tab nào</div>' : tabList.map((t) => `
+              <div class="list-row">
+                <div class="list-row-info">
+                  <div class="list-row-title">${esc(t.title || t.url || 'Tab')}</div>
+                  <div class="list-row-sub">${t.isSleeping ? 'Đang ngủ' : (t.ramMb ? t.ramMb + ' MB' : 'Hoạt động')}${t.isPlayingAudio ? ' • Audio' : ''}</div>
+                </div>
+                ${!t.isSleeping ? `<button class="btn btn-sm" data-sleep-tab="${t.id}">Ngủ</button>` : '<span class="chip chip-accent">Zzz</span>'}
+              </div>
+            `).join('')}
+          </div>
+        `;
+
+        bodyEl.querySelectorAll('#autoclean-seg .seg-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            await invoke('set_auto_clean_level', { level: btn.dataset.level });
+            renderRamPanel();
+          });
+        });
+
+        const note = document.getElementById('ram-status-note');
+        document.getElementById('btn-ram-clean-now')?.addEventListener('click', async () => {
+          const freed = await invoke('clean_ram');
+          if (note) note.textContent = `Đã thu hồi ${freed || 0} MB bộ nhớ nền.`;
+          setTimeout(renderRamPanel, 400);
+        });
+        document.getElementById('btn-ram-sleep-all')?.addEventListener('click', async () => {
+          await invoke('sleep_all_tabs');
+          if (note) note.textContent = 'Đã đưa các tab nền rảnh vào trạng thái ngủ.';
+          setTimeout(renderRamPanel, 300);
+        });
+        document.getElementById('btn-ram-dashboard')?.addEventListener('click', () => {
+          invoke('create_tab', { url: 'rustbrowse://performance' });
+          closeOverlay();
+        });
+        bodyEl.querySelectorAll('[data-sleep-tab]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            await invoke('sleep_tab', { tabId: Number(btn.dataset.sleepTab) });
+            renderRamPanel();
+          });
+        });
+      }
+
+      // ---- Panel 2: RustBrowse Shield ----
+      async function renderShieldPanel() {
+        titleEl.textContent = 'RustBrowse Shield';
+        const stats = await invoke('get_shield_stats');
+        const enabled = stats ? stats.enabled !== false : true;
+        const blockedAds = stats ? (stats.blockedAds || 0) : 0;
+        const blockedTrackers = stats ? (stats.blockedTrackers || 0) : 0;
+        const rulesCount = stats ? (stats.rulesCount || 0) : 0;
+
+        bodyEl.innerHTML = `
+          <div class="list-row">
+            <div class="list-row-info">
+              <div class="list-row-title">Bảo vệ Quảng cáo & Popup</div>
+              <div class="list-row-sub">${enabled ? 'Đang hoạt động (Shields Up)' : 'Đang tạm tắt'}</div>
+            </div>
+            <button class="btn ${enabled ? 'btn-primary' : ''}" id="btn-toggle-shield">
+              ${enabled ? 'Đang BẬT' : 'Đang TẮT'}
+            </button>
+          </div>
+
+          <div class="metric-grid">
+            <div class="metric-box">
+              <div class="metric-val">${blockedAds}</div>
+              <div class="metric-lbl">Quảng cáo đã chặn</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-val">${rulesCount}</div>
+              <div class="metric-lbl">Luật lọc đang nạp</div>
+            </div>
+          </div>
+
+          <div class="breakdown-row">
+            <span class="chip chip-success">Trackers chặn: ${blockedTrackers}</span>
+            <span class="chip chip-accent">Clean URL: BẬT</span>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn" id="btn-sh-zapper">Element Zapper</button>
+            <button class="btn" id="btn-sh-clean-url">Copy Clean URL</button>
+            <button class="btn btn-primary" id="btn-sh-open">Xem chi tiết</button>
+          </div>
+        `;
+
+        document.getElementById('btn-toggle-shield')?.addEventListener('click', async () => {
+          await invoke('toggle_shield', { enabled: !enabled });
+          renderShieldPanel();
+        });
+        document.getElementById('btn-sh-zapper')?.addEventListener('click', () => {
+          invoke('start_element_zapper');
+          closeOverlay();
+        });
+        document.getElementById('btn-sh-clean-url')?.addEventListener('click', () => {
+          invoke('copy_clean_url');
+          closeOverlay();
+        });
+        document.getElementById('btn-sh-open')?.addEventListener('click', () => {
+          invoke('create_tab', { url: 'rustbrowse://privacy' });
+          closeOverlay();
+        });
+      }
+
+      // ---- Panel 3: Video Downloader ----
+      async function renderVideosPanel() {
+        titleEl.textContent = 'Trình Tải Video';
+        const [videos, downloads, ytdlp, snifferOn] = await Promise.all([
+          invoke('get_detected_videos', {}),
+          invoke('list_downloads'),
+          invoke('get_yt_dlp_status'),
+          invoke('get_sniffer_enabled'),
+        ]);
+
+        const vList = Array.isArray(videos) ? videos : [];
+        const dList = Array.isArray(downloads) ? downloads : [];
+        const ytdlpInstalled = Boolean(ytdlp && ytdlp.installed);
+        const snifferEnabled = snifferOn !== false;
+
+        bodyEl.innerHTML = `
+          <div class="list-row">
+            <div class="list-row-info">
+              <div class="list-row-title">Tự động bắt Video (Sniffer)</div>
+              <div class="list-row-sub">Nút "Tải Video" nổi góc phải video</div>
+            </div>
+            <button class="btn btn-sm ${snifferEnabled ? 'btn-primary' : ''}" id="btn-toggle-sniffer">
+              ${snifferEnabled ? 'BẬT' : 'TẮT'}
+            </button>
+          </div>
+
+          <div class="list-row">
+            <div class="list-row-info">
+              <div class="list-row-title">yt-dlp Helper (YouTube / TikTok / FB)</div>
+              <div class="list-row-sub">${ytdlpInstalled ? 'Đã sẵn sàng' : 'Chưa cài đặt (tải 1-click từ GitHub)'}</div>
+            </div>
+            ${ytdlpInstalled
+              ? '<span class="chip chip-success">Sẵn sàng</span>'
+              : '<button class="btn btn-sm btn-primary" id="btn-install-ytdlp">Cài yt-dlp</button>'}
+          </div>
+          <div class="status-note" id="vid-status-note"></div>
+
+          <div class="list-group">
+            ${vList.length === 0
+              ? '<div class="empty-state">Chưa phát hiện video trên tab hiện tại.<br>Hãy phát video trên trang web để bắt link.</div>'
+              : vList.map((v, idx) => `
+                <div class="list-row">
+                  <div class="list-row-info">
+                    <div class="list-row-title">${esc(v.title || 'Video #' + (idx + 1))}</div>
+                    <div class="list-row-sub">${esc(v.format || 'mp4')} ${v.quality ? '• ' + esc(v.quality) : ''} ${v.isDrm ? '• DRM' : ''}</div>
+                  </div>
+                  ${v.isDrm
+                    ? '<span class="chip chip-danger" title="Nội dung bảo vệ DRM không hỗ trợ tải">DRM</span>'
+                    : `<button class="btn btn-sm btn-primary" data-dl-idx="${idx}">Tải</button>`}
+                </div>
+              `).join('')}
+          </div>
+
+          <div class="btn-row">
+            <button class="btn" id="btn-open-dl-page">Quản lý tải xuống (${dList.length})</button>
+            <button class="btn" id="btn-open-dl-folder">Mở thư mục</button>
+          </div>
+        `;
+
+        const note = document.getElementById('vid-status-note');
+        document.getElementById('btn-toggle-sniffer')?.addEventListener('click', async () => {
+          await invoke('set_sniffer_enabled', { enabled: !snifferEnabled });
+          renderVideosPanel();
+        });
+        document.getElementById('btn-install-ytdlp')?.addEventListener('click', async (e) => {
+          e.target.disabled = true;
+          if (note) note.textContent = 'Đang tải yt-dlp chính thức từ GitHub...';
+          await invoke('install_yt_dlp');
+          renderVideosPanel();
+        });
+        bodyEl.querySelectorAll('[data-dl-idx]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const v = vList[Number(btn.dataset.dlIdx)];
+            if (!v) return;
+            btn.disabled = true;
+            await invoke('start_video_download', {
+              url: v.url,
+              title: v.title,
+              referer: v.referer,
+              format: v.format,
+              useYtDlp: ytdlpInstalled && /youtube\.com|youtu\.be|tiktok\.com|facebook\.com/i.test(v.url || v.referer || ''),
+            });
+            if (note) note.textContent = `Đã thêm "${v.title || 'Video'}" vào hàng đợi tải.`;
+          });
+        });
+        document.getElementById('btn-open-dl-page')?.addEventListener('click', () => {
+          invoke('create_tab', { url: 'rustbrowse://downloads' });
+          closeOverlay();
+        });
+        document.getElementById('btn-open-dl-folder')?.addEventListener('click', () => {
+          invoke('open_download_folder', {});
+          closeOverlay();
+        });
+      }
+
+      // ---- Panel 4: Settings & Quick Menu ----
+      async function renderMenuPanel() {
+        titleEl.textContent = 'Menu & Cài Đặt';
+        const smoothOn = localStorage.getItem('rustbrowse-smooth-scroll') !== 'false';
+
+        bodyEl.innerHTML = `
+          <div class="list-group">
+            <button class="menu-item" data-nav="rustbrowse://superboost">
+              <span>Super Boost UI & Giao diện</span>
+              <span class="chip chip-accent">Mở</span>
+            </button>
+            <button class="menu-item" data-nav="rustbrowse://performance">
+              <span>Hiệu năng & Bộ nhớ RAM</span>
+              <span class="chip">Mở</span>
+            </button>
+            <button class="menu-item" data-nav="rustbrowse://privacy">
+              <span>Privacy & Anti-Adware Shield</span>
+              <span class="chip">Mở</span>
+            </button>
+            <button class="menu-item" data-nav="rustbrowse://downloads">
+              <span>Trình Quản Lý Tải Xuống</span>
+              <span class="chip">Ctrl+J</span>
+            </button>
+            <button class="menu-item" data-nav="rustbrowse://selftest">
+              <span>Chẩn đoán Hệ thống (Self-Test)</span>
+              <span class="chip">Mở</span>
+            </button>
+            <div class="menu-sep"></div>
+            <button class="menu-item" id="menu-smooth-scroll">
+              <span>Cuộn mượt Native Smooth Scroll</span>
+              <span class="chip ${smoothOn ? 'chip-success' : ''}">${smoothOn ? 'BẬT' : 'TẮT'}</span>
+            </button>
+            <button class="menu-item" id="menu-gaming-mode">
+              <span>Gaming Mode (EcoQoS nền)</span>
+              <span class="chip">Bật/Tắt</span>
+            </button>
+            <button class="menu-item" data-nav="rustbrowse://updates">
+              <span>Trung tâm Cập nhật Tự động</span>
+              <span class="chip chip-accent">Auto</span>
+            </button>
+            <button class="menu-item" id="menu-check-update">
+              <span>Kiểm tra Cập nhật Nhanh</span>
+              <span class="chip">Check</span>
+            </button>
+            <button class="menu-item" data-nav="rustbrowse://settings">
+              <span>Cài đặt nâng cao</span>
+              <span class="chip">Alt+S</span>
+            </button>
+          </div>
+          <div class="status-note" id="menu-status-note"></div>
+        `;
+
+        bodyEl.querySelectorAll('[data-nav]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            invoke('create_tab', { url: btn.dataset.nav });
+            closeOverlay();
+          });
+        });
+
+        const note = document.getElementById('menu-status-note');
+        document.getElementById('menu-smooth-scroll')?.addEventListener('click', async () => {
+          const next = !smoothOn;
+          localStorage.setItem('rustbrowse-smooth-scroll', String(next));
+          await invoke('toggle_smooth_scroll', { enabled: next });
+          renderMenuPanel();
+        });
+        document.getElementById('menu-gaming-mode')?.addEventListener('click', async () => {
+          const active = await invoke('toggle_gaming_mode');
+          if (note) note.textContent = active ? 'Gaming Mode: ĐÃ BẬT' : 'Gaming Mode: ĐÃ TẮT';
+        });
+        document.getElementById('menu-check-update')?.addEventListener('click', async () => {
+          if (note) note.textContent = 'Đang kiểm tra bản cập nhật mới...';
+          await invoke('check_for_updates');
+          if (note) note.textContent = 'Đã gửi yêu cầu kiểm tra cập nhật.';
+        });
+      }
+
+      async function renderPanel(panel) {
+        syncTheme();
+        currentPanel = panel || 'ram';
+        if (currentPanel === 'shield') return renderShieldPanel();
+        if (currentPanel === 'videos') return renderVideosPanel();
+        if (currentPanel === 'menu') return renderMenuPanel();
+        return renderRamPanel();
+      }
+
+      window.setOverlayPanel = function (panel) {
+        renderPanel(panel);
+      };
+
+      if (window.__TAURI__ && window.__TAURI__.event && typeof window.__TAURI__.event.listen === 'function') {
+        window.__TAURI__.event.listen('overlay-panel', (ev) => {
+          renderPanel(typeof ev.payload === 'string' ? ev.payload : (ev.payload && ev.payload.panel));
+        });
+      }
+
+      renderPanel(currentPanel);
+    })();
+  </script>
+</body>
+</html>

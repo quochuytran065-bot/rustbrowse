@@ -1,0 +1,11 @@
+[package]
+name = "resource-manager"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+common = { workspace = true }
+windows = { workspace = true }
+tracing = { workspace = true }

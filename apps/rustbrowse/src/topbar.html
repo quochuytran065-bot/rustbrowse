@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>RustBrowse Topbar</title>
+  <style>
+    /* Absolute CSS Reset */
+    *, *::before, *::after {
+      appearance: none;
+      -webkit-appearance: none;
+      border: none;
+      outline: none;
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    body {
+      background: #0d0f14;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Roboto, sans-serif;
+      color: #9ca3af;
+      overflow: visible;
+      height: 74px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* Row 1: Tab Strip (34px height) */
+    .tab-strip {
+      height: 34px;
+      display: flex;
+      align-items: flex-end;
+      padding: 0 10px;
+      background: #0d0f14;
+      gap: 6px;
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+    .tab-strip::-webkit-scrollbar {
+      display: none;
+    }
+    .tab {
+      height: 30px;
+      min-width: 120px;
+      max-width: 220px;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+      background: rgba(26, 30, 40, 0.45);
+      border-radius: 8px 8px 0 0;
+      cursor: pointer;
+      color: #6b7280;
+      font-size: 12px;
+      font-weight: 500;
+      transition: none !important;
+      position: relative;
+    }
+    .tab:hover {
+      background: rgba(26, 30, 40, 0.75);
+      color: #d1d5db;
+    }
+    .tab.active {
+      background: #1a1e28;
+      color: #f3f4f6;
+      font-weight: 600;
+    }
+    .tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 10px;
+      right: 10px;
+      height: 2px;
+      background: #3b82f6;
+      border-radius: 2px;
+    }
+    .tab-title {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-right: 6px;
+      pointer-events: none;
+      flex: 1;
+    }
+    .tab-badge-sleep {
+      font-size: 11px;
+      margin-right: 4px;
+    }
+    .tab-badge-audio {
+      font-size: 11px;
+      margin-right: 4px;
+      color: #f59e0b;
+      cursor: pointer;
+      padding: 1px 3px;
+      border-radius: 4px;
+    }
+    .tab-badge-audio:hover {
+      background: rgba(245, 158, 11, 0.2);
+    }
+    .tab-close {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      transition: none !important;
+      flex-shrink: 0;
+    }
+    .tab-close:hover {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+    }
+    .btn-new-tab {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      background: transparent;
+      color: #9ca3af;
+      cursor: pointer;
+      transition: none !important;
+      margin-bottom: 2px;
+    }
+    .btn-new-tab:hover {
+      background: #1a1e28;
+      color: #ffffff;
+    }
+
+    /* Row 2: Navigation & Action Toolbar (40px height) */
+    .toolbar {
+      height: 40px;
+      background: #1a1e28;
+      border-bottom: 1px solid #262b38;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 5px;
+      z-index: 100;
+    }
+
+    /* Uniform SVG Icon Buttons (15px, stroke 1.75px) */
+    .btn-icon {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: transparent;
+      color: #9ca3af;
+      cursor: pointer;
+      transition: none !important;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .btn-icon:hover {
+      background: #262b38;
+      color: #ffffff;
+    }
+    .btn-icon:active {
+      transform: scale(0.95);
+    }
+    .btn-icon svg {
+      width: 15px;
+      height: 15px;
+      stroke-width: 1.75px;
+    }
+
+    /* Pill-shaped Omnibox */
+    .omnibox-wrapper {
+      flex: 1;
+      height: 28px;
+      background: #10131a;
+      border: 1px solid #2a3040;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 6px;
+      transition: none !important;
+      min-width: 140px;
+    }
+    .omnibox-wrapper:focus-within {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+    .omnibox-icon {
+      color: #10b981;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .omnibox-input {
+      flex: 1;
+      background: transparent;
+      color: #f3f4f6;
+      font-size: 13px;
+      line-height: 28px;
+      font-family: inherit;
+    }
+    .omnibox-input::placeholder {
+      color: #4b5563;
+    }
+
+    /* Shield Button Badge */
+    .shield-badge {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      background: #3b82f6;
+      color: #ffffff;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 999px;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    /* Pill RAM Badge */
+    .ram-pill {
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      background: rgba(16, 185, 129, 0.12);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      transition: none !important;
+      flex-shrink: 0;
+    }
+    .ram-pill.medium {
+      background: rgba(245, 158, 11, 0.12);
+      color: #f59e0b;
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+    .ram-pill.high {
+      background: rgba(239, 68, 68, 0.12);
+      color: #ef4444;
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+
+    /* Active State Highlights */
+    .btn-icon.active-mode {
+      color: #00f0ff !important;
+      background: rgba(0, 240, 255, 0.15) !important;
+      box-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+    }
+
+    /* Popover Panels (Inspector & Downloads) */
+    .popover-panel {
+      position: absolute;
+      top: 76px;
+      background: #141824;
+      border: 1px solid #2a3142;
+      border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+      padding: 16px;
+      z-index: 1000;
+      display: none;
+      color: #e5e7eb;
+      width: 380px;
+    }
+    .popover-panel.show {
+      display: block;
+    }
+    #ram-inspector-panel {
+      right: 70px;
+    }
+    #downloads-panel {
+      right: 40px;
+      width: 320px;
+    }
+
+    .panel-header {
+      font-size: 13px;
+      font-weight: 700;
+      color: #f3f4f6;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #232938;
+    }
+
+    /* Threshold Selector Buttons */
+    .threshold-group {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .threshold-btn {
+      flex: 1;
+      padding: 5px 0;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 6px;
+      background: #1e2433;
+      color: #9ca3af;
+      cursor: pointer;
+      border: 1px solid #2b3447;
+      text-align: center;
+      transition: none !important;
+    }
+    .threshold-btn:hover {
+      background: #2a3349;
+      color: #ffffff;
+    }
+    .threshold-btn.active {
+      background: rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+      border-color: #3b82f6;
+    }
+
+    /* Mini Task Manager Tab List */
+    .task-list {
+      max-height: 180px;
+      overflow-y: auto;
+      margin-bottom: 12px;
+    }
+    .task-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      margin-bottom: 4px;
+    }
+    .task-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .task-name {
+      max-width: 180px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #d1d5db;
+    }
+    .task-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .task-btn {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      background: #232a3b;
+      color: #9ca3af;
+    }
+    .task-btn:hover {
+      background: #333d54;
+      color: #ffffff;
+    }
+    .task-btn.kill:hover {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+    }
+
+    /* Command Palette Modal (Ctrl+K) */
+    .command-palette-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(4px);
+      z-index: 2000;
+      display: none;
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 15vh;
+    }
+    .command-palette-backdrop.show {
+      display: flex;
+    }
+    .command-palette {
+      width: 520px;
+      background: #141824;
+      border: 1px solid #3b82f6;
+      border-radius: 12px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
+      overflow: hidden;
+    }
+    .palette-input-wrapper {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid #232938;
+      gap: 10px;
+    }
+    .palette-input {
+      flex: 1;
+      background: transparent;
+      font-size: 15px;
+      color: #f3f4f6;
+    }
+    .palette-results {
+      max-height: 280px;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .palette-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #9ca3af;
+    }
+    .palette-item:hover, .palette-item.selected {
+      background: #232a3b;
+      color: #f3f4f6;
+    }
+    .palette-key-hint {
+      font-size: 10px;
+      background: #10131a;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #6b7280;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      top: 8px;
+      right: 12px;
+      background: #1e2433;
+      border: 1px solid #3b82f6;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+      color: #f3f4f6;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: 8px;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      opacity: 0;
+      transform: none;
+      transition: none !important;
+      pointer-events: none;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Row 1: Tabs -->
+  <div class="tab-strip" id="tab-strip">
+    <div class="tab active" data-id="1">
+      <span class="tab-title">New Tab</span>
+      <div class="tab-close" onclick="closeTab(event, 1)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </div>
+    </div>
+    <button class="btn-new-tab" onclick="newTab()" title="New Tab (Ctrl+T)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Row 2: Toolbar -->
+  <div class="toolbar">
+    <!-- Navigation Buttons -->
+    <button class="btn-icon" onclick="postAction('Back')" title="Back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 18l-6-6 6-6"/>
+      </svg>
+    </button>
+    <button class="btn-icon" onclick="postAction('Forward')" title="Forward">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18l6-6-6-6"/>
+      </svg>
+    </button>
+    <button class="btn-icon" onclick="postAction('Reload')" title="Reload (F5 / Ctrl+R)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+      </svg>
+    </button>
+    <button class="btn-icon" onclick="postAction('Home')" title="Home (rustbrowse://home)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+    </button>
+
+    <!-- Omnibox -->
+    <div class="omnibox-wrapper">
+      <div class="omnibox-icon" title="Secure connection">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      </div>
+      <input type="text" class="omnibox-input" id="omnibox" placeholder="Search with Google or enter address" autocomplete="off" spellcheck="false">
+      <!-- Copy Clean URL Button -->
+      <button class="btn-icon" style="width:20px;height:20px;" onclick="copyCleanUrl()" title="Copy Clean URL (Lột sạch mã tracking)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Active Shield Badge -->
+    <button class="btn-icon" onclick="postAction('ToggleShield')" title="Active Shield & Privacy">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+      <span class="shield-badge" id="shield-count">0</span>
+    </button>
+
+    <!-- Element Zapper (Bấm đâu xóa đó) -->
+    <button class="btn-icon" id="btn-zapper" onclick="startZapper()" title="Element Zapper (Bấm đâu xóa đó / Alt+Z)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/>
+      </svg>
+    </button>
+
+    <!-- Reader Mode (Alt+R) -->
+    <button class="btn-icon" id="btn-reader" onclick="toggleReader()" title="Smart Reader Mode (Đọc sạch không rác / Alt+R)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+      </svg>
+    </button>
+
+    <!-- Picture-in-Picture (PiP) -->
+    <button class="btn-icon" onclick="postAction('TriggerPiP')" title="Picture-in-Picture (Video nổi góc màn hình)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+        <rect x="12" y="9" width="8" height="6" rx="1" ry="1"/>
+      </svg>
+    </button>
+
+    <!-- Gaming / Low-Power Mode (Ctrl+Shift+G) -->
+    <button class="btn-icon" id="btn-gaming" onclick="toggleGamingMode()" title="Gaming Mode (Khóa 200MB, EcoQoS, 0% CPU / Ctrl+Shift+G)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="6" width="20" height="12" rx="2"/>
+        <path d="M6 12h4m-2-2v4m7-2h.01m3 0h.01"/>
+      </svg>
+    </button>
+
+    <!-- Lite Mode -->
+    <button class="btn-icon" id="btn-lite" onclick="postAction('ToggleLiteMode')" title="Lite Mode (Chặn web fonts & media nặng)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+      </svg>
+    </button>
+
+    <!-- Clean RAM Button -->
+    <button class="btn-icon" onclick="cleanRam()" title="Clean RAM & Trim Working Set">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 6L6 18"/><path d="m20 10-4-4"/><path d="m14 4 4 4"/><circle cx="8" cy="16" r="2"/>
+      </svg>
+    </button>
+
+    <!-- RAM Pill Badge (Bấm để mở Mini Task Manager & Chọn Ngưỡng) -->
+    <div class="ram-pill" id="ram-pill" onclick="toggleRamInspector()" title="Bấm để mở Mini Task Manager & Chọn ngưỡng Auto Clean">
+      <span id="ram-text">-- MB</span>
+    </div>
+
+    <!-- Downloads Popover Button -->
+    <button class="btn-icon" onclick="toggleDownloadsPopover()" title="Compact Download Manager">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+    </button>
+
+    <!-- Command Palette Trigger (Ctrl+K) -->
+    <button class="btn-icon" onclick="openCommandPalette()" title="Command Palette (Ctrl+K)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+    </button>
+
+    <!-- Settings -->
+    <button class="btn-icon" onclick="postAction('OpenSettings')" title="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Popover 1: RAM & Tab Inspector (Mini Task Manager) -->
+  <div class="popover-panel" id="ram-inspector-panel">
+    <div class="panel-header">
+      <span>⚡ Mini Task Manager & Auto Clean</span>
+      <span style="font-size:11px;color:#10b981;font-weight:600;" id="inspector-total-ram">-- MB Total</span>
+    </div>
+
+    <!-- Threshold selector: Tắt | 200 MB | 300 MB | 400 MB -->
+    <div style="font-size:11px;margin-bottom:6px;color:#9ca3af;font-weight:600;">Ngưỡng Auto Clean RAM tự động:</div>
+    <div class="threshold-group">
+      <div class="threshold-btn" data-val="0" onclick="setThreshold(0)">Tắt</div>
+      <div class="threshold-btn" data-val="200" onclick="setThreshold(200)">200 MB</div>
+      <div class="threshold-btn active" data-val="300" onclick="setThreshold(300)">300 MB ★</div>
+      <div class="threshold-btn" data-val="400" onclick="setThreshold(400)">400 MB</div>
+    </div>
+
+    <div style="font-size:11px;margin-bottom:6px;color:#9ca3af;font-weight:600;">Tiến trình từng Tab:</div>
+    <div class="task-list" id="inspector-task-list">
+      <!-- Injected dynamically -->
+    </div>
+
+    <div style="display:flex;gap:8px;">
+      <button class="threshold-btn" style="flex:1;background:#262b38;color:#f3f4f6;" onclick="postAction('SleepTabs')">💤 Cho Ngủ Hết Tab Nền</button>
+      <button class="threshold-btn" style="flex:1;background:rgba(59,130,246,0.2);color:#60a5fa;" onclick="cleanRam()">🧹 Xả RAM Ngay</button>
+    </div>
+  </div>
+
+  <!-- Popover 2: Compact Download Manager -->
+  <div class="popover-panel" id="downloads-panel">
+    <div class="panel-header">
+      <span>📥 Downloads (ParallelDownloading)</span>
+      <span style="font-size:11px;color:#3b82f6;cursor:pointer;" onclick="postAction('OpenDownloads')">Mở thư mục</span>
+    </div>
+    <div id="downloads-list" style="font-size:12px;color:#9ca3af;text-align:center;padding:16px 0;">
+      Chưa có file đang tải. Tải đa luồng tự động bật.
+    </div>
+  </div>
+
+  <!-- Modal: Command Palette (Ctrl+K) -->
+  <div class="command-palette-backdrop" id="cmd-palette-backdrop" onclick="closeCommandPalette(event)">
+    <div class="command-palette" onclick="event.stopPropagation()">
+      <div class="palette-input-wrapper">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" style="width:18px;height:18px;">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" class="palette-input" id="palette-search" placeholder="Gõ lệnh (> clean, > gaming...) hoặc tìm tab, bookmark..." autocomplete="off">
+        <span class="palette-key-hint">ESC để đóng</span>
+      </div>
+      <div class="palette-results" id="palette-results">
+        <!-- Results injected dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast">
+    <span id="toast-msg">Đã dọn RAM thành công</span>
+  </div>
+
+  <script>
+    let currentTabs = [];
+    let currentActiveId = 1;
+    let isGamingActive = false;
+    let selectedThreshold = 300;
+
+    // Host IPC communication via window.chrome.webview.postMessage
+    function postAction(action, payload) {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage(JSON.stringify({ action: action, payload: payload }));
+      }
+    }
+
+    // Omnibox submit
+    const omnibox = document.getElementById('omnibox');
+    omnibox.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        let val = omnibox.value.trim();
+        if (val) {
+          postAction('Navigate', val);
+          omnibox.blur();
+        }
+      }
+    });
+    omnibox.addEventListener('focus', function () {
+      omnibox.select();
+    });
+
+    function cleanRam() {
+      postAction('CleanRam');
+      showToast('🧹 Đã xả RAM & giải phóng Working Set!');
+    }
+
+    function newTab() {
+      postAction('NewTab');
+    }
+
+    function selectTab(id) {
+      postAction('SelectTab', id);
+    }
+
+    function closeTab(e, id) {
+      e.stopPropagation();
+      postAction('CloseTab', id);
+    }
+
+    function toggleAudioMute(e, id) {
+      e.stopPropagation();
+      postAction('ToggleAudioMute', id);
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-msg');
+      toastMsg.innerText = msg;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2000);
+    }
+
+    // Copy Clean URL (lột sạch tham số tracking)
+    function copyCleanUrl() {
+      let raw = omnibox.value || '';
+      if (!raw) return;
+      try {
+        let u = new URL(raw);
+        const badParams = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid', 'si', 'ref', 'igshid', 'yclid', 'mc_cid'];
+        badParams.forEach(p => u.searchParams.delete(p));
+        let cleaned = u.toString();
+        navigator.clipboard.writeText(cleaned);
+        showToast('🔗 Đã copy Clean URL vào Clipboard!');
+      } catch (_) {
+        navigator.clipboard.writeText(raw);
+        showToast('🔗 Đã copy URL vào Clipboard!');
+      }
+    }
+
+    // Smart Reader Mode
+    function toggleReader() {
+      postAction('ToggleReaderMode');
+      showToast('📖 Chế độ đọc sạch (Reader Mode)');
+    }
+
+    // Element Zapper
+    function startZapper() {
+      postAction('StartElementZapper');
+      showToast('🎯 Rê chuột và click để xóa phần tử quảng cáo');
+    }
+
+    // Gaming Mode
+    function toggleGamingMode() {
+      isGamingActive = !isGamingActive;
+      postAction('ToggleGamingMode', isGamingActive);
+      const btn = document.getElementById('btn-gaming');
+      if (isGamingActive) {
+        btn.classList.add('active-mode');
+        showToast('🎮 Gaming Mode Bật (200MB, EcoQoS, 0% CPU)');
+      } else {
+        btn.classList.remove('active-mode');
+        showToast('Gaming Mode Tắt. Khôi phục bình thường.');
+      }
+    }
+
+    // RAM Inspector Popover
+    function toggleRamInspector() {
+      const panel = document.getElementById('ram-inspector-panel');
+      const downloads = document.getElementById('downloads-panel');
+      downloads.classList.remove('show');
+      panel.classList.toggle('show');
+      renderInspectorList();
+    }
+
+    function toggleDownloadsPopover() {
+      const downloads = document.getElementById('downloads-panel');
+      const ram = document.getElementById('ram-inspector-panel');
+      ram.classList.remove('show');
+      downloads.classList.toggle('show');
+    }
+
+    function setThreshold(val) {
+      selectedThreshold = val;
+      postAction('SetAutoCleanThreshold', val);
+      document.querySelectorAll('.threshold-btn').forEach(btn => {
+        if (parseInt(btn.dataset.val, 10) === val) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+      showToast(val === 0 ? 'Đã tắt Auto Clean RAM' : `Ngưỡng Auto Clean: ${val} MB`);
+    }
+
+    function renderInspectorList() {
+      const list = document.getElementById('inspector-task-list');
+      let html = '';
+      currentTabs.forEach(t => {
+        const isActive = t.id === currentActiveId;
+        const isSleep = t.state === 'Sleeping';
+        const isAudio = t.is_audible;
+        let ramEst = isSleep ? '35 MB (💤)' : (isActive ? '140 MB (⚡)' : '75 MB');
+        let statusBadge = isAudio ? '🔊' : (isSleep ? '💤' : '●');
+
+        html += `
+          <div class="task-item">
+            <div class="task-name" title="${t.url || ''}">${statusBadge} ${t.title || 'Tab'}</div>
+            <div class="task-actions">
+              <span style="font-size:11px;color:#9ca3af;">${ramEst}</span>
+              ${!isActive && !isSleep ? `<span class="task-btn" onclick="postAction('SleepTab', ${t.id})">Ngủ</span>` : ''}
+              <span class="task-btn kill" onclick="closeTab(event, ${t.id})">✕</span>
+            </div>
+          </div>
+        `;
+      });
+      list.innerHTML = html || '<div style="color:#6b7280;text-align:center;">Không có tab nào</div>';
+    }
+
+    // Command Palette (Ctrl+K)
+    function openCommandPalette() {
+      document.getElementById('cmd-palette-backdrop').classList.add('show');
+      const inp = document.getElementById('palette-search');
+      inp.value = '';
+      inp.focus();
+      renderPaletteResults('');
+    }
+
+    function closeCommandPalette(e) {
+      document.getElementById('cmd-palette-backdrop').classList.remove('show');
+    }
+
+    const COMMANDS = [
+      { cmd: '> clean', title: '🧹 Clean RAM Now', desc: 'Xả Working Set và dọn rác bộ nhớ', action: () => cleanRam() },
+      { cmd: '> gaming', title: '🎮 Toggle Gaming Mode', desc: 'Khóa RAM 200MB, EcoQoS, 0% CPU', action: () => toggleGamingMode() },
+      { cmd: '> sleep all', title: '💤 Sleep All Background Tabs', desc: 'Cho ngủ toàn bộ tab nền không phát nhạc', action: () => postAction('SleepTabs') },
+      { cmd: '> reader', title: '📖 Toggle Reader Mode (Alt+R)', desc: 'Bật chế độ đọc sạch không quảng cáo', action: () => toggleReader() },
+      { cmd: '> zapper', title: '🎯 Element Zapper', desc: 'Click chọn phần tử rác để xóa vĩnh viễn', action: () => startZapper() },
+      { cmd: '> lite', title: '⚡ Toggle Lite Mode', desc: 'Chặn web fonts và media nặng', action: () => postAction('ToggleLiteMode') },
+      { cmd: '> downloads', title: '📥 Open Downloads', desc: 'Mở trang tải file', action: () => postAction('OpenDownloads') },
+      { cmd: '> settings', title: '⚙ Open Settings', desc: 'Mở cài đặt trình duyệt', action: () => postAction('OpenSettings') },
+    ];
+
+    document.getElementById('palette-search').addEventListener('input', function (e) {
+      renderPaletteResults(e.target.value.trim());
+    });
+
+    document.getElementById('palette-search').addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        closeCommandPalette();
+      } else if (e.key === 'Enter') {
+        const first = document.querySelector('.palette-item');
+        if (first) first.click();
+      }
+    });
+
+    function renderPaletteResults(query) {
+      const container = document.getElementById('palette-results');
+      let html = '';
+      const lower = query.toLowerCase();
+
+      // Show commands
+      const matchedCmds = COMMANDS.filter(c => c.cmd.includes(lower) || c.title.toLowerCase().includes(lower));
+      matchedCmds.forEach((c, idx) => {
+        html += `
+          <div class="palette-item ${idx === 0 ? 'selected' : ''}" onclick="executePaletteCmd(${COMMANDS.indexOf(c)})">
+            <div>
+              <div style="font-weight:600;color:#f3f4f6;">${c.title}</div>
+              <div style="font-size:11px;color:#6b7280;">${c.desc}</div>
+            </div>
+            <span class="palette-key-hint">${c.cmd}</span>
+          </div>
+        `;
+      });
+
+      // Show open tabs matching query
+      if (lower && !lower.startsWith('>')) {
+        currentTabs.filter(t => (t.title && t.title.toLowerCase().includes(lower)) || (t.url && t.url.toLowerCase().includes(lower))).forEach(t => {
+          html += `
+            <div class="palette-item" onclick="selectTab(${t.id}); closeCommandPalette();">
+              <div>
+                <div style="font-weight:600;color:#f3f4f6;">Jump to: ${t.title || 'Tab'}</div>
+                <div style="font-size:11px;color:#6b7280;">${t.url || ''}</div>
+              </div>
+              <span class="palette-key-hint">Tab ${t.id}</span>
+            </div>
+          `;
+        });
+      }
+
+      container.innerHTML = html || '<div style="padding:16px;color:#6b7280;text-align:center;">Không tìm thấy lệnh hoặc tab phù hợp</div>';
+    }
+
+    function executePaletteCmd(idx) {
+      closeCommandPalette();
+      if (COMMANDS[idx]) COMMANDS[idx].action();
+    }
+
+    // Global Key Listener for Ctrl+K, Ctrl+Shift+G
+    window.addEventListener('keydown', function (e) {
+      if (e.ctrlKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        openCommandPalette();
+      }
+      if (e.ctrlKey && e.shiftKey && (e.key === 'g' || e.key === 'G')) {
+        e.preventDefault();
+        toggleGamingMode();
+      }
+    });
+
+    // Close popovers on click outside
+    document.addEventListener('click', function (e) {
+      const panel = document.getElementById('ram-inspector-panel');
+      const pill = document.getElementById('ram-pill');
+      if (panel.classList.contains('show') && !panel.contains(e.target) && !pill.contains(e.target)) {
+        panel.classList.remove('show');
+      }
+      const dl = document.getElementById('downloads-panel');
+      if (dl.classList.contains('show') && !dl.contains(e.target) && !e.target.closest('button[title*="Download"]')) {
+        dl.classList.remove('show');
+      }
+    });
+
+    // Receive state updates from Rust host
+    window.addEventListener('message', function (event) {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (!data) return;
+
+        // Update URL
+        if (data.url !== undefined && document.activeElement !== omnibox) {
+          omnibox.value = data.url;
+        }
+
+        // Update Shield Count
+        if (data.shieldCount !== undefined) {
+          document.getElementById('shield-count').innerText = data.shieldCount;
+        }
+
+        // Update RAM Badge & Popover
+        if (data.ramMb !== undefined) {
+          const pill = document.getElementById('ram-pill');
+          const ramText = document.getElementById('ram-text');
+          ramText.innerText = data.ramMb + ' MB';
+          document.getElementById('inspector-total-ram').innerText = data.ramMb + ' MB Total';
+          pill.className = 'ram-pill';
+          if (data.ramMb > 400) {
+            pill.classList.add('high');
+          } else if (data.ramMb > 250) {
+            pill.classList.add('medium');
+          }
+        }
+
+        // Update Lite Mode
+        if (data.liteMode !== undefined) {
+          const btnLite = document.getElementById('btn-lite');
+          if (data.liteMode) btnLite.classList.add('active-mode');
+          else btnLite.classList.remove('active-mode');
+        }
+
+        // Update Gaming Mode
+        if (data.gamingMode !== undefined) {
+          isGamingActive = data.gamingMode;
+          const btn = document.getElementById('btn-gaming');
+          if (isGamingActive) btn.classList.add('active-mode');
+          else btn.classList.remove('active-mode');
+        }
+
+        // Trigger toast
+        if (data.toast) {
+          showToast(data.toast);
+        }
+
+        // Render Tabs list
+        if (data.tabs) {
+          currentTabs = data.tabs;
+          currentActiveId = data.activeId;
+          renderTabs(data.tabs, data.activeId);
+          renderInspectorList();
+        }
+      } catch (err) {}
+    });
+
+    function renderTabs(tabs, activeId) {
+      const container = document.getElementById('tab-strip');
+      let html = '';
+      for (let i = 0; i < tabs.length; i++) {
+        const t = tabs[i];
+        const isActive = t.id === activeId ? 'active' : '';
+        const sleepBadge = t.state === 'Sleeping' ? '<span class="tab-badge-sleep" title="Tab đang ngủ (0 MB RAM)">💤</span>' : '';
+        const audioBadge = t.is_audible ? `<span class="tab-badge-audio" title="Đang phát âm thanh. Bấm để tắt tiếng." onclick="toggleAudioMute(event, ${t.id})">🔊</span>` : '';
+
+        html += `
+          <div class="tab ${isActive}" onclick="selectTab(${t.id})">
+            ${sleepBadge}
+            ${audioBadge}
+            <span class="tab-title">${t.title || 'Tab'}</span>
+            <div class="tab-close" onclick="closeTab(event, ${t.id})">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </div>
+          </div>
+        `;
+      }
+      html += `
+        <button class="btn-new-tab" onclick="newTab()" title="New Tab (Ctrl+T)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+      `;
+      container.innerHTML = html;
+    }
+  </script>
+</body>
+</html>

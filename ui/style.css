@@ -1,0 +1,588 @@
+/* ============================================================================
+   RustBrowse Topbar & Dynamic Island Styles (ui/style.css)
+   74px Fixed Height Shell (36px Unlimited Tab Strip + 38px Dynamic Island Bar)
+   Pure GPU-only transitions (transform, opacity) using ui/tokens.css
+   ============================================================================ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+
+html, body {
+  width: 100%;
+  height: 74px;
+  max-height: 74px;
+  overflow: hidden;
+  background: var(--rb-bg-shell);
+  font-family: var(--rb-font-sans);
+  color: var(--rb-text-primary);
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================================
+   ROW 1: Unlimited Scrollable Tab Strip (36px)
+   ============================================================================ */
+.tab-strip {
+  height: 36px;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  padding: 4px 8px 0 8px;
+  gap: 6px;
+  overflow: hidden;
+  position: relative;
+}
+
+.tabs-scroll-wrap {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.tabs-scroll-wrap::-webkit-scrollbar {
+  display: none;
+}
+
+.tabs-container {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 100%;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.tab-strip-spacer {
+  flex: 1 0 24px;
+  height: 100%;
+}
+
+.tab-strip-end {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-bottom: 3px;
+  padding-left: 2px;
+  background: transparent;
+}
+
+/* Individual Tab — auto-shrinks gracefully, never crushes '+' */
+.tab {
+  height: 30px;
+  min-width: 72px;
+  max-width: 210px;
+  width: 176px;
+  flex: 1 1 176px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  border-radius: 9px 9px 0 0;
+  background: var(--rb-bg-tab);
+  color: var(--rb-text-secondary);
+  border: 1px solid var(--rb-border-subtle);
+  border-bottom: none;
+  cursor: pointer;
+  position: relative;
+  transform: translateY(0);
+  transition: transform var(--rb-dur-fast) var(--rb-ease-spring), opacity var(--rb-dur-fast) var(--rb-ease-snappy);
+}
+
+.tab:hover {
+  background: var(--rb-bg-tab-hover);
+  color: var(--rb-text-primary);
+}
+
+.tab.active {
+  background: var(--rb-bg-tab-active);
+  color: var(--rb-text-primary);
+  font-weight: 600;
+  border-color: var(--rb-border-default);
+  box-shadow: var(--rb-shadow-sm);
+  z-index: 2;
+}
+
+.tab.active::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 0;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--rb-accent);
+}
+
+.tab.sleeping {
+  opacity: 0.62;
+}
+
+.tab-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--rb-accent);
+}
+
+.tab.sleeping .tab-icon {
+  color: var(--rb-text-muted);
+}
+
+.tab-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--rb-text-sm);
+  line-height: 1.2;
+}
+
+.tab-audio-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--rb-radius-xs);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--rb-blue);
+  background: var(--rb-blue-soft);
+  cursor: pointer;
+  transition: transform var(--rb-dur-fast) var(--rb-ease-spring);
+}
+
+.tab-audio-icon.playing {
+  display: flex;
+}
+
+.tab-audio-icon.muted {
+  color: var(--rb-text-muted);
+  background: var(--rb-bg-hover);
+}
+
+.tab-audio-icon:hover {
+  transform: scale(1.08);
+}
+
+.tab-close {
+  width: 17px;
+  height: 17px;
+  border-radius: var(--rb-radius-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--rb-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform var(--rb-dur-fast) var(--rb-ease-spring);
+}
+
+.tab-close:hover {
+  background: var(--rb-danger-soft);
+  color: var(--rb-danger);
+  transform: scale(1.08);
+}
+
+.btn-new-tab {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--rb-radius-sm);
+  background: var(--rb-bg-tab);
+  border: 1px solid var(--rb-border-subtle);
+  color: var(--rb-text-secondary);
+}
+
+.btn-new-tab:hover {
+  background: var(--rb-bg-tab-active);
+  color: var(--rb-accent);
+  border-color: var(--rb-border-accent);
+}
+
+/* ============================================================================
+   ROW 2: Toolbar & iOS Dynamic Island Capsule (38px)
+   Rounded Viewport Frame bottom polish
+   ============================================================================ */
+.toolbar {
+  height: 38px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--rb-bg-toolbar);
+  padding: 0 8px;
+  gap: 8px;
+  border-top: 1px solid var(--rb-border-subtle);
+  border-bottom: 1px solid var(--rb-border-default);
+  box-shadow: inset 0 -1px 0 var(--rb-border-subtle);
+  position: relative;
+  z-index: 3;
+}
+
+.nav-cluster,
+.action-cluster {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+/* Tactile Icon Buttons */
+.btn-icon {
+  width: 27px;
+  height: 27px;
+  border-radius: var(--rb-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--rb-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform var(--rb-dur-fast) var(--rb-ease-spring), opacity var(--rb-dur-fast) var(--rb-ease-snappy);
+}
+
+.btn-icon:hover {
+  background: var(--rb-bg-hover);
+  color: var(--rb-text-primary);
+}
+
+.btn-icon:active {
+  transform: scale(0.92);
+  background: var(--rb-bg-active);
+}
+
+.btn-superboost.active {
+  color: var(--rb-purple);
+  background: var(--rb-purple-soft);
+  border-color: rgba(124, 58, 237, 0.28);
+}
+
+/* Theme Icon Toggle */
+[data-theme="light"] .icon-sun { display: none; }
+[data-theme="light"] .icon-moon { display: block; }
+[data-theme="dark"] .icon-sun { display: block; }
+[data-theme="dark"] .icon-moon { display: none; }
+
+/* ============================================================================
+   iOS Dynamic Island Capsule
+   ============================================================================ */
+.island-zone {
+  flex: 1;
+  min-width: 140px;
+  max-width: 680px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.dynamic-island {
+  height: 28px;
+  width: 100%;
+  max-width: 560px;
+  background: var(--rb-bg-capsule);
+  border: 1px solid var(--rb-border-default);
+  border-radius: var(--rb-radius-pill);
+  box-shadow: var(--rb-shadow-island);
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 10px;
+  gap: 6px;
+  position: relative;
+  transform: scale(1);
+  transition: transform var(--rb-dur-base) var(--rb-ease-spring);
+}
+
+.dynamic-island:focus-within {
+  max-width: 680px;
+  background: var(--rb-bg-capsule-focus);
+  border-color: var(--rb-accent);
+  box-shadow: var(--rb-shadow-focus);
+  transform: scale(1.008);
+}
+
+.dynamic-island.pulse {
+  transform: scale(1.022);
+  border-color: var(--rb-accent);
+}
+
+.island-sec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--rb-success);
+}
+
+.island-sec-dot.sec-internal { background: var(--rb-accent); }
+.island-sec-dot.sec-https { background: var(--rb-success); }
+.island-sec-dot.sec-http { background: var(--rb-warning); }
+
+.island-domain-btn {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: var(--rb-text-primary);
+  font-size: var(--rb-text-base);
+  font-weight: 500;
+  cursor: text;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+}
+
+.island-domain-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dynamic-island:focus-within .island-domain-btn {
+  display: none;
+}
+
+.address-input {
+  display: none;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--rb-text-primary);
+  font-size: var(--rb-text-base);
+  font-family: var(--rb-font-sans);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.dynamic-island:focus-within .address-input {
+  display: block;
+}
+
+.address-input::placeholder {
+  color: var(--rb-text-muted);
+}
+
+/* Morphing Event Pill inside Dynamic Island */
+.island-event-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--rb-radius-pill);
+  border: none;
+  background: var(--rb-island-chip-bg);
+  color: var(--rb-island-chip-text);
+  font-size: var(--rb-text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  max-width: 210px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: rb-island-pop var(--rb-dur-base) var(--rb-ease-spring);
+}
+
+.island-event-pill[hidden] {
+  display: none;
+}
+
+.island-event-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rb-accent);
+  flex-shrink: 0;
+}
+
+.island-event-pill[data-kind="ad-blocked"] .island-event-dot { background: var(--rb-success); }
+.island-event-pill[data-kind="video-detected"] .island-event-dot { background: #38bdf8; }
+.island-event-pill[data-kind="ram-cleaned"] .island-event-dot { background: #34d399; }
+.island-event-pill[data-kind="crash-recovered"] .island-event-dot { background: #fbbf24; }
+.island-event-pill[data-kind="update-available"] .island-event-dot { background: #a78bfa; }
+.island-event-pill[data-kind="download-error"] .island-event-dot { background: #fb7185; }
+
+/* Audio Mini Equalizer inside Dynamic Island */
+.island-audio-bar {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 18px;
+  padding: 3px 6px;
+  border-radius: var(--rb-radius-pill);
+  border: none;
+  background: var(--rb-blue-soft);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.island-audio-bar[hidden] {
+  display: none;
+}
+
+.eq-bar {
+  width: 2.5px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--rb-blue);
+  transform-origin: bottom center;
+  animation: rb-eq 750ms ease-in-out infinite alternate;
+}
+
+.eq-bar:nth-child(2) { animation-delay: 180ms; height: 12px; }
+.eq-bar:nth-child(3) { animation-delay: 360ms; height: 8px; }
+
+@keyframes rb-eq {
+  0% { transform: scaleY(0.32); }
+  100% { transform: scaleY(1); }
+}
+
+@keyframes rb-island-pop {
+  0% { opacity: 0; transform: scale(0.86); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.island-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.btn-icon-inside {
+  width: 21px;
+  height: 21px;
+  border-radius: var(--rb-radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--rb-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform var(--rb-dur-fast) var(--rb-ease-spring);
+}
+
+.btn-icon-inside:hover {
+  background: var(--rb-bg-hover);
+  color: var(--rb-accent);
+}
+
+.btn-icon-inside:active {
+  transform: scale(0.9);
+}
+
+/* ============================================================================
+   Right Action Cluster Badges (Video, Shield, Live RAM)
+   ============================================================================ */
+.badge-btn {
+  height: 26px;
+  border-radius: var(--rb-radius-pill);
+  background: var(--rb-bg-tab);
+  border: 1px solid var(--rb-border-subtle);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 4px;
+  font-size: var(--rb-text-xs);
+  font-weight: 600;
+  font-family: var(--rb-font-sans);
+  cursor: pointer;
+  color: var(--rb-text-secondary);
+  flex-shrink: 0;
+  transition: transform var(--rb-dur-fast) var(--rb-ease-spring);
+}
+
+.badge-btn:hover {
+  background: var(--rb-bg-hover);
+  border-color: var(--rb-border-default);
+}
+
+.badge-btn:active {
+  transform: scale(0.95);
+}
+
+.badge-video {
+  color: var(--rb-blue);
+  background: var(--rb-blue-soft);
+  border-color: rgba(37, 99, 235, 0.22);
+}
+
+.badge-video.has-videos {
+  background: var(--rb-blue);
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.badge-shield {
+  color: var(--rb-success);
+  background: var(--rb-success-soft);
+  border-color: rgba(16, 185, 129, 0.24);
+}
+
+.badge-ram {
+  font-variant-numeric: tabular-nums;
+}
+
+.ram-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.ram-green {
+  color: var(--rb-success);
+  background: var(--rb-success-soft);
+  border-color: rgba(16, 185, 129, 0.24);
+}
+
+.ram-yellow {
+  color: var(--rb-warning);
+  background: var(--rb-warning-soft);
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.ram-red {
+  color: var(--rb-danger);
+  background: var(--rb-danger-soft);
+  border-color: rgba(244, 63, 94, 0.28);
+}
+
+/* Responsive graceful collapsing on narrow windows */
+@media (max-width: 780px) {
+  #btn-reader-mode,
+  #btn-copy-clean-url {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  #btn-superboost,
+  #btn-downloads {
+    display: none;
+  }
+}

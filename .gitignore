@@ -1,0 +1,50 @@
+# Rust & Tauri build outputs
+/target/
+/src-tauri/target/
+/src-tauri/gen/
+**/*.rs.bk
+
+# Node / CLI dependencies
+/node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Compiled binaries, installers & DLLs (never commit executables to source repo)
+*.exe
+*.dll
+*.pdb
+*.msi
+*.nsis
+*.sig
+*.AppImage
+*.dmg
+/dist/
+
+# Secrets, signing keys & environment files (CRITICAL: never commit private keys)
+.env
+.env.*
+*.key
+*.pem
+*.pfx
+*.p12
+*private*key*
+tauri.key*
+id_rsa*
+id_ed25519*
+
+# Browser profile, user data, caches & SQLite databases
+/UserData/
+/User Data/
+/UpdateStaging/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+adblock_rules.dat
+
+# Temporary & OS files
+*.tmp
+*.bak
+*.log
+.DS_Store
+Thumbs.db
