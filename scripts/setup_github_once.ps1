@@ -37,11 +37,10 @@ if (-not (Test-Path (Join-Path $RootDir ".git"))) {
     git init -b main | Out-Null
 }
 
-$RepoExists = $true
-gh repo view $FullRepo >$null 2>&1
-if ($LASTEXITCODE -ne 0) {
-    $RepoExists = $false
-}
+$ErrorActionPreference = "Continue"
+gh repo view $FullRepo *>$null
+$RepoExists = ($LASTEXITCODE -eq 0)
+$ErrorActionPreference = "Stop"
 
 if (-not $RepoExists) {
     Write-Host "    Creating GitHub repository $FullRepo ($Visibility)..." -ForegroundColor Yellow
@@ -49,8 +48,11 @@ if (-not $RepoExists) {
 }
 
 $RemoteUrl = "https://github.com/$FullRepo.git"
-$ExistingOrigin = git remote get-url origin 2>$null
-if ($LASTEXITCODE -eq 0 -and $ExistingOrigin) {
+$ErrorActionPreference = "Continue"
+$ExistingOrigin = (git remote get-url origin 2>$null)
+$HasOrigin = ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($ExistingOrigin))
+$ErrorActionPreference = "Stop"
+if ($HasOrigin) {
     if ($ExistingOrigin -ne $RemoteUrl) {
         git remote set-url origin $RemoteUrl
     }
