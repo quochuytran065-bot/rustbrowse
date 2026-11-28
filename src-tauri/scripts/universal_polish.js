@@ -1,15 +1,15 @@
 // ============================================================================
 // RustBrowse Universal Super Boost Web Polish (scripts/universal_polish.js)
 // Safe, toggleable CSS/JS visual & performance polish for all websites:
+// - ZERO initial opacity:0 hiding (instant 0ms first paint & progressive images!)
 // - Respects prefers-reduced-motion & per-domain disable flag (localStorage)
-// - Smooth GPU page reveal (opacity 0 -> 1 in 150ms, zero artificial delay)
 // - Crisp typography (-webkit-font-smoothing: antialiased)
 // - Low-specificity @layer rustbrowse-polish + :where(...) rounded corners (12px)
 //   for content images >= 100x80 (excluding logos/avatars/icons/sprites/SVG/
 //   canvas/maps/fullscreen videos), cards, and inputs
 // - Thin modern rounded scrollbar (6px)
-// - Lazy-load offscreen images (loading="lazy", decoding="async")
-// - Throttled MutationObserver (>= 250ms + requestIdleCallback), addedNodes only
+// - Lazy-load far-offscreen images (loading="lazy", decoding="async")
+// - Throttled MutationObserver (>= 300ms + requestIdleCallback), addedNodes only
 // ============================================================================
 
 (() => {
@@ -30,21 +30,12 @@
 
   const STORAGE_KEY_DOMAIN_DISABLED = 'rb_polish_disabled';
   const STYLE_ID = '__rustbrowse_universal_polish_css';
-  const REVEAL_CLASS = 'rb-polish-reveal-ready';
   const MUTATION_THROTTLE_MS = 300;
 
   const scheduleIdle =
     typeof window.requestIdleCallback === 'function'
       ? (cb, timeout) => window.requestIdleCallback(cb, { timeout: timeout || 1200 })
       : (cb) => window.setTimeout(cb, 120);
-
-  function prefersReducedMotion() {
-    try {
-      return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-    } catch (_) {
-      return false;
-    }
-  }
 
   function isDomainDisabled() {
     try {
@@ -93,14 +84,14 @@
   function processImage(img) {
     if (!img || img.tagName !== 'IMG' || img.dataset.rbPolishChecked === '1') return;
 
-    // 1. Lazy-load & async decode offscreen images
+    // 1. Async decode + lazy-load ONLY far-offscreen images so above-the-fold paints immediately
     if (!img.hasAttribute('decoding')) {
       img.setAttribute('decoding', 'async');
     }
     if (!img.hasAttribute('loading')) {
       try {
         const rect = img.getBoundingClientRect();
-        if (rect.top > (window.innerHeight || 800) * 1.1) {
+        if (rect.top > (window.innerHeight || 800) * 1.5) {
           img.setAttribute('loading', 'lazy');
         }
       } catch (_) {}
@@ -151,24 +142,9 @@
   }
 
   function buildPolishCss() {
-    const reduced = prefersReducedMotion();
-    const revealCss = reduced
-      ? ''
-      : `
-      html:not(.${REVEAL_CLASS}) {
-        opacity: 0;
-      }
-      html.${REVEAL_CLASS} {
-        opacity: 1;
-        transition: opacity 150ms cubic-bezier(0.22, 1, 0.36, 1);
-      }
-    `;
-
     return `
       @layer rustbrowse-polish {
-        ${revealCss}
-
-        /* Crisp typography */
+        /* Crisp typography — zero artificial opacity hiding or render delay */
         :where(html, body) {
           -webkit-font-smoothing: antialiased;
           text-rendering: optimizeLegibility;
@@ -215,42 +191,21 @@
     `;
   }
 
-  function triggerPageReveal() {
-    const root = document.documentElement;
-    if (!root || root.classList.contains(REVEAL_CLASS)) return;
-    requestAnimationFrame(() => {
-      root.classList.add(REVEAL_CLASS);
-    });
-  }
-
   function applyPolishStyles() {
     if (!polishEnabled) return;
-    let styleEl = document.getElementById(STYLE_ID);
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = STYLE_ID;
-      styleEl.textContent = buildPolishCss();
-      const target = document.head || document.documentElement;
-      if (target) {
-        target.appendChild(styleEl);
-      }
-    }
-
-    // Immediate GPU reveal with 0 artificial delay + 250ms hard failsafe
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', triggerPageReveal, { once: true });
-      window.setTimeout(triggerPageReveal, 250);
-    } else {
-      triggerPageReveal();
+    if (document.getElementById(STYLE_ID)) return;
+    const styleEl = document.createElement('style');
+    styleEl.id = STYLE_ID;
+    styleEl.textContent = buildPolishCss();
+    const target = document.head || document.documentElement;
+    if (target) {
+      target.appendChild(styleEl);
     }
   }
 
   function removePolishStyles() {
     const styleEl = document.getElementById(STYLE_ID);
     if (styleEl) styleEl.remove();
-    if (document.documentElement) {
-      document.documentElement.classList.add(REVEAL_CLASS);
-    }
   }
 
   // Public toggles for RustBrowse UI / IPC
@@ -315,7 +270,7 @@
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
 
-  // Boot
+  // Boot immediately with zero artificial render delay
   if (polishEnabled) {
     applyPolishStyles();
   }

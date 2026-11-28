@@ -1,36 +1,41 @@
-//! Anti-Freeze, Real Per-Tab RAM Monitor & Safe Incremental Auto-Clean Policy Engine
+//! Anti-Freeze, Real Per-Tab RAM + CPU Monitor & Safe Incremental Auto-Clean Policy Engine
 //! Target: Windows 11 x64 (Rust + Tauri v2 + WebView2)
 //!
-//! - Reads real Windows OS memory metrics via Win32 API:
-//!   CreateToolhelp32Snapshot + K32GetProcessMemoryInfo (PrivateUsage & WorkingSetSize).
-//! - Accurately classifies Browser, GPU, Renderer, and Utility PIDs via PEB command-line
-//!   inspection with safe process-tree fallback.
-//! - Samples on a throttled background thread (4s interval) so the UI thread NEVER blocks.
-//! - Runs a pure, unit-tested incremental auto-clean policy engine (Off / Balanced / Aggressive)
+//! - Reads real Windows OS memory & CPU metrics strictly on a background worker thread:
+//!   CreateToolhelp32Snapshot + K32GetProcessMemoryInfo (PrivateUsage & WorkingSetSize) +
+//!   GetProcessTimes (OS CPU% delta) + GlobalMemoryStatusEx (system memory pressure).
+//! - Exposes O(1) microsecond cached snapshots via RwLock — NEVER scans processes on UI/IPC threads.
+//! - Adaptive sampling cadence via `set_perf_panel_open(open)`: 1000ms when Perf panel is open,
+//!   8000ms when closed, with immediate Condvar wakeup on open.
+//! - Bounded history ring buffer (`VecDeque`, max 60 samples) for long-session stability (C11).
+//! - Pure, unit-tested incremental auto-clean policy engine (Off / Balanced / Aggressive)
 //!   with 60s cooldown, +30MB hysteresis, max 1 small action per cycle, and strict protection
 //!   for active tab, audio/video tabs, active downloads, GPU process, and browser process.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
 use windows::Win32::System::ProcessStatus::{
     K32EmptyWorkingSet, K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX,
 };
+use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 use windows::Win32::System::Threading::{
-    GetCurrentProcess, GetCurrentProcessId, OpenProcess, SetPriorityClass,
+    GetCurrentProcess, GetCurrentProcessId, GetProcessTimes, OpenProcess, SetPriorityClass,
     ABOVE_NORMAL_PRIORITY_CLASS, PROCESS_QUERY_INFORMATION, PROCESS_SET_QUOTA, PROCESS_VM_READ,
 };
 
 pub const COOLDOWN_SECS: u64 = 60;
 pub const HYSTERESIS_MB: u64 = 30;
-const SAMPLER_INTERVAL_SECS: u64 = 4;
+pub const MAX_HISTORY_SAMPLES: usize = 60;
+const SAMPLER_OPEN_INTERVAL_MS: u64 = 1000;
+const SAMPLER_IDLE_INTERVAL_MS: u64 = 8000;
 
 static PER_TAB_THRESHOLD_MB: AtomicU64 = AtomicU64::new(300);
 static GAMING_MODE: AtomicBool = AtomicBool::new(false);
@@ -47,7 +52,7 @@ pub enum ProcessRole {
     Other,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AutoCleanLevel {
     Off,
@@ -91,6 +96,7 @@ pub struct ProcessMemoryEntry {
     pub role: ProcessRole,
     pub private_mb: u64,
     pub working_set_mb: u64,
+    pub cpu_percent: f32,
     pub is_main: bool,
     pub is_active_tab: bool,
     pub is_audio: bool,
@@ -113,10 +119,25 @@ pub struct TabMemoryInfo {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MemorySamplePoint {
+    pub timestamp_ms: u64,
+    pub total_private_mb: u64,
+    pub total_cpu_percent: f32,
+    pub system_memory_load_pct: u32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProcessMemoryReport {
     pub timestamp_ms: u64,
     pub total_private_mb: u64,
     pub total_working_set_mb: u64,
+    pub total_cpu_percent: f32,
+    pub system_memory_load_pct: u32,
+    pub system_total_ram_mb: u64,
+    pub system_avail_ram_mb: u64,
+    pub memory_pressure_level: String,
+    pub perf_panel_open: bool,
     pub browser_mb: u64,
     pub gpu_mb: u64,
     pub renderer_mb: u64,
@@ -125,6 +146,7 @@ pub struct ProcessMemoryReport {
     pub renderer_count: usize,
     pub processes: Vec<ProcessMemoryEntry>,
     pub tabs: Vec<TabMemoryInfo>,
+    pub history: Vec<MemorySamplePoint>,
     pub total_cleaned_mb: u64,
     pub auto_clean_level: AutoCleanLevel,
     pub last_clean_action: Option<String>,
@@ -136,6 +158,12 @@ impl Default for ProcessMemoryReport {
             timestamp_ms: now_unix_ms(),
             total_private_mb: 0,
             total_working_set_mb: 0,
+            total_cpu_percent: 0.0,
+            system_memory_load_pct: 0,
+            system_total_ram_mb: 0,
+            system_avail_ram_mb: 0,
+            memory_pressure_level: "low".to_string(),
+            perf_panel_open: false,
             browser_mb: 0,
             gpu_mb: 0,
             renderer_mb: 0,
@@ -144,6 +172,7 @@ impl Default for ProcessMemoryReport {
             renderer_count: 0,
             processes: Vec::new(),
             tabs: Vec::new(),
+            history: Vec::new(),
             total_cleaned_mb: 0,
             auto_clean_level: AutoCleanLevel::Balanced,
             last_clean_action: None,
@@ -206,6 +235,49 @@ pub enum CleanAction {
         current_mb: u64,
         reason: String,
     },
+}
+
+/// Pure helper: computes normalized OS CPU% (0.0..=100.0) from `GetProcessTimes` 100ns deltas.
+pub fn compute_cpu_percent(
+    prev_proc_100ns: u64,
+    curr_proc_100ns: u64,
+    elapsed_secs: f64,
+    logical_cpus: usize,
+) -> f32 {
+    if elapsed_secs <= 0.001 || curr_proc_100ns <= prev_proc_100ns {
+        return 0.0;
+    }
+    let delta_secs = (curr_proc_100ns - prev_proc_100ns) as f64 / 10_000_000.0;
+    let cpus = logical_cpus.max(1) as f64;
+    let raw_pct = ((delta_secs / (elapsed_secs * cpus)) * 100.0).clamp(0.0, 100.0);
+    ((raw_pct * 10.0).round() / 10.0) as f32
+}
+
+/// Pure helper: classifies OS memory load % into `"low" | "moderate" | "high"`.
+pub fn classify_memory_pressure(system_load_pct: u32) -> &'static str {
+    if system_load_pct >= 85 {
+        "high"
+    } else if system_load_pct >= 70 {
+        "moderate"
+    } else {
+        "low"
+    }
+}
+
+/// Pure helper: pushes a sample onto a bounded ring buffer capped at `max_len`.
+pub fn push_bounded_sample(
+    history: &mut VecDeque<MemorySamplePoint>,
+    sample: MemorySamplePoint,
+    max_len: usize,
+) {
+    if max_len == 0 {
+        history.clear();
+        return;
+    }
+    while history.len() >= max_len {
+        history.pop_front();
+    }
+    history.push_back(sample);
 }
 
 /// Pure, deterministic incremental auto-clean policy engine.
@@ -309,40 +381,79 @@ pub fn evaluate_auto_clean_policy(
     }
 }
 
+struct RawProcessSnapshot {
+    entry: ProcessMemoryEntry,
+    cpu_time_100ns: Option<u64>,
+}
+
 #[allow(dead_code)]
 pub struct Watchdog {
     protected_pids: Mutex<HashSet<u32>>,
     trim_history: Mutex<HashMap<u32, (Instant, u64)>>,
     tracked_tabs: Mutex<Vec<TabTrackInput>>,
+    cpu_prev: Mutex<HashMap<u32, (u64, Instant)>>,
+    history: Mutex<VecDeque<MemorySamplePoint>>,
     latest_report: RwLock<ProcessMemoryReport>,
     last_clean_action: Mutex<Option<String>>,
     total_ram_cleaned_mb: AtomicU64,
     auto_clean_level: AtomicU8,
+    perf_panel_open: AtomicBool,
+    sampler_wake: (Mutex<u64>, Condvar),
+    logical_cpus: usize,
 }
 
 #[allow(dead_code)]
 impl Watchdog {
     pub fn new() -> Arc<Self> {
+        let logical_cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+
         let wd = Arc::new(Self {
             protected_pids: Mutex::new(HashSet::new()),
             trim_history: Mutex::new(HashMap::new()),
             tracked_tabs: Mutex::new(Vec::new()),
+            cpu_prev: Mutex::new(HashMap::new()),
+            history: Mutex::new(VecDeque::with_capacity(MAX_HISTORY_SAMPLES)),
             latest_report: RwLock::new(ProcessMemoryReport::default()),
             last_clean_action: Mutex::new(None),
             total_ram_cleaned_mb: AtomicU64::new(0),
             auto_clean_level: AtomicU8::new(AutoCleanLevel::Balanced.to_u8()),
+            perf_panel_open: AtomicBool::new(false),
+            sampler_wake: (Mutex::new(0), Condvar::new()),
+            logical_cpus,
         });
 
         Self::elevate_ui_priority();
 
-        // Background throttled OS RAM sampler + incremental policy engine (never blocks UI thread)
+        // Background adaptive OS RAM + CPU sampler + incremental policy engine.
+        // Yields briefly (250ms) so cold-start shell & Tab 1 render with zero Win32 contention.
         let wd_clone = wd.clone();
         let _ = std::thread::Builder::new()
             .name("watchdog-ram-sampler".to_string())
-            .spawn(move || loop {
-                let report = wd_clone.refresh_memory_report();
-                wd_clone.run_policy_cycle(&report);
-                std::thread::sleep(Duration::from_secs(SAMPLER_INTERVAL_SECS));
+            .spawn(move || {
+                std::thread::sleep(Duration::from_millis(250));
+                let mut last_policy_run = Instant::now();
+                loop {
+                    let report = wd_clone.refresh_memory_report();
+                    if last_policy_run.elapsed() >= Duration::from_secs(4) {
+                        wd_clone.run_policy_cycle(&report);
+                        last_policy_run = Instant::now();
+                    }
+
+                    let interval_ms = if wd_clone.is_perf_panel_open() {
+                        SAMPLER_OPEN_INTERVAL_MS
+                    } else {
+                        SAMPLER_IDLE_INTERVAL_MS
+                    };
+
+                    let (lock, cvar) = &wd_clone.sampler_wake;
+                    if let Ok(guard) = lock.lock() {
+                        let _ = cvar.wait_timeout(guard, Duration::from_millis(interval_ms));
+                    } else {
+                        std::thread::sleep(Duration::from_millis(interval_ms));
+                    }
+                }
             });
 
         wd
@@ -358,6 +469,24 @@ impl Watchdog {
                 info!("RustBrowse UI process promoted to ABOVE_NORMAL_PRIORITY_CLASS (Anti-Freeze Active).");
             }
         }
+    }
+
+    /// Switches background sampler between 1000ms (Perf panel open) and 8000ms (closed),
+    /// waking the sampler thread immediately when opened. Never blocks UI thread.
+    pub fn set_perf_panel_open(&self, open: bool) {
+        self.perf_panel_open.store(open, Ordering::Relaxed);
+        if let Ok(mut report) = self.latest_report.write() {
+            report.perf_panel_open = open;
+        }
+        let (lock, cvar) = &self.sampler_wake;
+        if let Ok(mut seq) = lock.lock() {
+            *seq = seq.wrapping_add(1);
+            cvar.notify_all();
+        }
+    }
+
+    pub fn is_perf_panel_open(&self) -> bool {
+        self.perf_panel_open.load(Ordering::Relaxed)
     }
 
     pub fn set_per_tab_threshold(mb: u64) {
@@ -422,7 +551,8 @@ impl Watchdog {
         }
     }
 
-    /// O(1) non-blocking read of the latest cached OS memory report.
+    /// O(1) non-blocking read of the latest cached OS memory & CPU report.
+    /// NEVER invokes Win32 process enumeration on the caller/UI/IPC thread.
     pub fn get_memory_report(&self) -> ProcessMemoryReport {
         self.latest_report
             .read()
@@ -436,7 +566,8 @@ impl Watchdog {
         report.tabs.iter().find(|t| t.tab_id == tab_id).cloned()
     }
 
-    /// Performs one OS snapshot pass and updates the cached `ProcessMemoryReport`.
+    /// Performs one OS snapshot pass on the background worker thread and updates
+    /// the cached `ProcessMemoryReport` + bounded 60-sample history ring buffer.
     pub fn refresh_memory_report(&self) -> ProcessMemoryReport {
         let protected = self
             .protected_pids
@@ -449,12 +580,49 @@ impl Watchdog {
             .map(|g| g.clone())
             .unwrap_or_default();
 
-        let mut processes = Self::get_browser_process_tree();
-        for p in &mut processes {
-            if protected.contains(&p.pid) {
-                p.is_audio = true;
+        let now = Instant::now();
+        let raw_snaps = Self::snapshot_browser_process_tree();
+        let (sys_load_pct, sys_total_mb, sys_avail_mb) = query_system_memory_status();
+
+        let mut processes = Vec::with_capacity(raw_snaps.len());
+        let mut live_pids: HashSet<u32> = HashSet::with_capacity(raw_snaps.len());
+        let mut total_cpu_percent: f32 = 0.0;
+
+        {
+            let mut cpu_prev = self.cpu_prev.lock().unwrap_or_else(|e| e.into_inner());
+            for mut snap in raw_snaps {
+                let pid = snap.entry.pid;
+                live_pids.insert(pid);
+                if protected.contains(&pid) {
+                    snap.entry.is_audio = true;
+                }
+                if let Some(curr_100ns) = snap.cpu_time_100ns {
+                    let pct = if let Some(&(prev_100ns, prev_inst)) = cpu_prev.get(&pid) {
+                        compute_cpu_percent(
+                            prev_100ns,
+                            curr_100ns,
+                            now.saturating_duration_since(prev_inst).as_secs_f64(),
+                            self.logical_cpus,
+                        )
+                    } else {
+                        0.0
+                    };
+                    cpu_prev.insert(pid, (curr_100ns, now));
+                    snap.entry.cpu_percent = pct;
+                    total_cpu_percent += pct;
+                }
+                processes.push(snap.entry);
             }
+            // Prune exited PIDs so cpu_prev map never leaks memory over long sessions (C11)
+            cpu_prev.retain(|pid, _| live_pids.contains(pid));
         }
+
+        // Prune exited PIDs from trim_history as well (C11)
+        if let Ok(mut hist) = self.trim_history.lock() {
+            hist.retain(|pid, _| live_pids.contains(pid));
+        }
+
+        total_cpu_percent = ((total_cpu_percent.min(100.0) * 10.0).round()) / 10.0;
 
         let mut total_private_mb = 0u64;
         let mut total_working_set_mb = 0u64;
@@ -553,11 +721,33 @@ impl Watchdog {
         }
 
         LAST_TOTAL_RAM_MB.store(total_private_mb, Ordering::Relaxed);
+        let ts_ms = now_unix_ms();
+
+        let history_vec = {
+            let mut h = self.history.lock().unwrap_or_else(|e| e.into_inner());
+            push_bounded_sample(
+                &mut h,
+                MemorySamplePoint {
+                    timestamp_ms: ts_ms,
+                    total_private_mb,
+                    total_cpu_percent,
+                    system_memory_load_pct: sys_load_pct,
+                },
+                MAX_HISTORY_SAMPLES,
+            );
+            h.iter().cloned().collect()
+        };
 
         let report = ProcessMemoryReport {
-            timestamp_ms: now_unix_ms(),
+            timestamp_ms: ts_ms,
             total_private_mb,
             total_working_set_mb,
+            total_cpu_percent,
+            system_memory_load_pct: sys_load_pct,
+            system_total_ram_mb: sys_total_mb,
+            system_avail_ram_mb: sys_avail_mb,
+            memory_pressure_level: classify_memory_pressure(sys_load_pct).to_string(),
+            perf_panel_open: self.is_perf_panel_open(),
             browser_mb,
             gpu_mb,
             renderer_mb,
@@ -566,6 +756,7 @@ impl Watchdog {
             renderer_count,
             processes,
             tabs: tabs_info,
+            history: history_vec,
             total_cleaned_mb: self.total_ram_cleaned_mb.load(Ordering::Relaxed),
             auto_clean_level: self.get_auto_clean_level(),
             last_clean_action: self.last_clean_action.lock().ok().and_then(|g| g.clone()),
@@ -687,11 +878,10 @@ impl Watchdog {
                         pid, tab_id, saved, reason
                     );
                     if let Ok(mut last) = self.last_clean_action.lock() {
-                        *last = Some(msg.clone());
+                        *last = Some(msg);
                     }
                     info!(pid, tab_id, saved_mb = saved, reason = %reason, "Incremental auto-clean executed.");
                 } else if let Ok(mut h) = self.trim_history.lock() {
-                    // Record attempt so cooldown still applies
                     h.insert(pid, (Instant::now(), current_mb));
                 }
             }
@@ -739,7 +929,8 @@ impl Watchdog {
         saved
     }
 
-    /// Manual RAM clean triggered by user: safely trims ONLY eligible idle Renderer processes.
+    /// Manual RAM clean triggered by user: uses cached process snapshot (never runs
+    /// Toolhelp32 on the caller thread) and trims ONLY eligible idle Renderer processes.
     /// Strictly exempts Browser, GPU, Utility, active tab, audio/video, and downloading tabs.
     pub fn clean_all_background_memory(&self) -> u64 {
         let active_pid = ACTIVE_TAB_PID.load(Ordering::Relaxed);
@@ -754,7 +945,7 @@ impl Watchdog {
             .map(|g| g.clone())
             .unwrap_or_default();
 
-        let entries = Self::get_browser_process_tree();
+        let entries = self.get_memory_report().processes;
         let mut total_saved = 0u64;
 
         for entry in entries {
@@ -789,7 +980,13 @@ impl Watchdog {
                 *last = Some(format!("Manual clean freed {} MB", total_saved));
             }
         }
-        let _ = self.refresh_memory_report();
+
+        // Wake background sampler to refresh cached report asynchronously
+        let (lock, cvar) = &self.sampler_wake;
+        if let Ok(mut seq) = lock.lock() {
+            *seq = seq.wrapping_add(1);
+            cvar.notify_all();
+        }
         total_saved
     }
 
@@ -824,9 +1021,7 @@ impl Watchdog {
         (0, 0)
     }
 
-    /// Enumerates the full RustBrowse + WebView2 process tree (multi-level BFS)
-    /// and classifies Browser, GPU, Renderer, and Utility PIDs accurately.
-    pub fn get_browser_process_tree() -> Vec<ProcessMemoryEntry> {
+    fn snapshot_browser_process_tree() -> Vec<RawProcessSnapshot> {
         let current_pid = unsafe { GetCurrentProcessId() };
         let active_pid = ACTIVE_TAB_PID.load(Ordering::Relaxed);
         let mut results = Vec::new();
@@ -842,7 +1037,6 @@ impl Watchdog {
                 ..Default::default()
             };
 
-            // Pass 1: collect all processes in the OS snapshot
             let mut all_procs: Vec<(u32, u32, String)> = Vec::with_capacity(256);
             let mut children_by_parent: HashMap<u32, Vec<usize>> = HashMap::new();
 
@@ -867,7 +1061,6 @@ impl Watchdog {
             }
             let _ = CloseHandle(snapshot);
 
-            // Pass 2: BFS from current_pid to capture ALL descendant WebView2 processes
             let mut visited: HashSet<u32> = HashSet::new();
             let mut queue: VecDeque<u32> = VecDeque::new();
             visited.insert(current_pid);
@@ -884,7 +1077,6 @@ impl Watchdog {
                 }
             }
 
-            // Pass 3: query real PrivateUsage & WorkingSetSize + classify role
             for (pid, ppid, exe_name) in all_procs {
                 if !visited.contains(&pid) {
                     continue;
@@ -894,6 +1086,7 @@ impl Watchdog {
                     OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid)
                 {
                     let (private_mb, working_set_mb) = Self::query_process_memory_mb(handle);
+                    let cpu_time_100ns = query_process_cpu_time_100ns(handle);
                     let cmdline = if pid == current_pid {
                         None
                     } else {
@@ -909,16 +1102,20 @@ impl Watchdog {
                         cmdline.as_deref(),
                     );
 
-                    results.push(ProcessMemoryEntry {
-                        pid,
-                        parent_pid: ppid,
-                        name: exe_name,
-                        role,
-                        private_mb,
-                        working_set_mb,
-                        is_main: pid == current_pid,
-                        is_active_tab: pid == active_pid,
-                        is_audio: false,
+                    results.push(RawProcessSnapshot {
+                        entry: ProcessMemoryEntry {
+                            pid,
+                            parent_pid: ppid,
+                            name: exe_name,
+                            role,
+                            private_mb,
+                            working_set_mb,
+                            cpu_percent: 0.0,
+                            is_main: pid == current_pid,
+                            is_active_tab: pid == active_pid,
+                            is_audio: false,
+                        },
+                        cpu_time_100ns,
                     });
                 }
             }
@@ -927,24 +1124,18 @@ impl Watchdog {
         results
     }
 
-    /// Returns cached total browser RAM in MB (non-blocking), falling back to a live scan on boot.
+    /// Enumerates the full RustBrowse + WebView2 process tree (multi-level BFS).
+    pub fn get_browser_process_tree() -> Vec<ProcessMemoryEntry> {
+        Self::snapshot_browser_process_tree()
+            .into_iter()
+            .map(|s| s.entry)
+            .collect()
+    }
+
+    /// O(1) non-blocking read of cached total browser RAM in MB.
+    /// NEVER triggers a Win32 process scan on the caller/UI/IPC thread.
     pub fn total_browser_ram_mb() -> u64 {
-        let cached = LAST_TOTAL_RAM_MB.load(Ordering::Relaxed);
-        if cached > 0 {
-            return cached;
-        }
-        let sum: u64 = Self::get_browser_process_tree()
-            .iter()
-            .map(|p| {
-                if p.private_mb > 0 {
-                    p.private_mb
-                } else {
-                    p.working_set_mb
-                }
-            })
-            .sum();
-        LAST_TOTAL_RAM_MB.store(sum, Ordering::Relaxed);
-        sum
+        LAST_TOTAL_RAM_MB.load(Ordering::Relaxed)
     }
 
     pub fn get_total_cleaned_mb(&self) -> u64 {
@@ -981,13 +1172,11 @@ pub fn classify_process_role(
             return ProcessRole::Utility;
         }
         if exe_lower.contains("webview2") || exe_lower.contains("msedge") {
-            // WebView2 browser host process has no --type= flag
             return ProcessRole::Browser;
         }
         return ProcessRole::Other;
     }
 
-    // Fallback when PEB read is unavailable (e.g. restricted handle)
     if parent_pid == current_pid {
         ProcessRole::Browser
     } else if exe_lower.contains("webview2") || exe_lower.contains("msedge") {
@@ -995,6 +1184,40 @@ pub fn classify_process_role(
     } else {
         ProcessRole::Utility
     }
+}
+
+fn filetime_to_u64(ft: FILETIME) -> u64 {
+    ((ft.dwHighDateTime as u64) << 32) | (ft.dwLowDateTime as u64)
+}
+
+fn query_process_cpu_time_100ns(handle: HANDLE) -> Option<u64> {
+    unsafe {
+        let mut creation = FILETIME::default();
+        let mut exit = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        if GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user).is_ok() {
+            Some(filetime_to_u64(kernel).saturating_add(filetime_to_u64(user)))
+        } else {
+            None
+        }
+    }
+}
+
+fn query_system_memory_status() -> (u32, u64, u64) {
+    unsafe {
+        let mut status = MEMORYSTATUSEX {
+            dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+            ..Default::default()
+        };
+        if GlobalMemoryStatusEx(&mut status).is_ok() {
+            let load_pct = status.dwMemoryLoad;
+            let total_mb = status.ullTotalPhys / (1024 * 1024);
+            let avail_mb = status.ullAvailPhys / (1024 * 1024);
+            return (load_pct, total_mb, avail_mb);
+        }
+    }
+    (0, 0, 0)
 }
 
 fn now_unix_ms() -> u64 {
@@ -1061,7 +1284,7 @@ unsafe fn read_process_command_line(handle: HANDLE) -> Option<String> {
     let mut ret_len: u32 = 0;
     let status = NtQueryInformationProcess(
         raw_handle,
-        0, // ProcessBasicInformation
+        0,
         &mut pbi as *mut _ as *mut c_void,
         std::mem::size_of::<ProcessBasicInformation>() as u32,
         &mut ret_len,
@@ -1070,7 +1293,6 @@ unsafe fn read_process_command_line(handle: HANDLE) -> Option<String> {
         return None;
     }
 
-    // x64 PEB -> ProcessParameters at offset 0x20
     let mut proc_params_ptr: *mut c_void = std::ptr::null_mut();
     let mut bytes_read: usize = 0;
     let ok = ReadProcessMemory(
@@ -1084,7 +1306,6 @@ unsafe fn read_process_command_line(handle: HANDLE) -> Option<String> {
         return None;
     }
 
-    // x64 RTL_USER_PROCESS_PARAMETERS -> CommandLine (UNICODE_STRING) at offset 0x70
     let mut cmd_us = std::mem::zeroed::<UnicodeString>();
     let ok = ReadProcessMemory(
         raw_handle,
@@ -1125,7 +1346,7 @@ unsafe fn read_process_command_line(_handle: HANDLE) -> Option<String> {
 }
 
 // ============================================================================
-// Unit Tests for Auto-Clean Policy Engine & Process Role Classification
+// Unit Tests: CPU Delta, Bounded History, Pressure & Auto-Clean Policy Engine
 // ============================================================================
 
 #[cfg(test)]
@@ -1145,6 +1366,49 @@ mod tests {
             is_sleeping: false,
             idle_secs,
         }
+    }
+
+    #[test]
+    fn cpu_delta_calculation_accurate_and_clamped() {
+        // 1.0s of process CPU time across 2.0s elapsed on 4 logical CPUs = 12.5%
+        let pct = compute_cpu_percent(10_000_000, 20_000_000, 2.0, 4);
+        assert!((pct - 12.5).abs() < 0.01);
+
+        // Zero or reversed delta -> 0.0%
+        assert_eq!(compute_cpu_percent(20_000_000, 20_000_000, 1.0, 4), 0.0);
+        assert_eq!(compute_cpu_percent(20_000_000, 10_000_000, 1.0, 4), 0.0);
+
+        // Extreme spike clamps cleanly at 100.0%
+        assert_eq!(compute_cpu_percent(0, 100_000_000, 0.5, 2), 100.0);
+    }
+
+    #[test]
+    fn bounded_history_ring_buffer_caps_at_60() {
+        let mut ring = VecDeque::new();
+        for i in 0..100u64 {
+            push_bounded_sample(
+                &mut ring,
+                MemorySamplePoint {
+                    timestamp_ms: i * 1000,
+                    total_private_mb: 200 + i,
+                    total_cpu_percent: 5.0,
+                    system_memory_load_pct: 50,
+                },
+                MAX_HISTORY_SAMPLES,
+            );
+        }
+        assert_eq!(ring.len(), MAX_HISTORY_SAMPLES);
+        assert_eq!(ring.front().unwrap().timestamp_ms, 40_000);
+        assert_eq!(ring.back().unwrap().timestamp_ms, 99_000);
+    }
+
+    #[test]
+    fn memory_pressure_classification_thresholds() {
+        assert_eq!(classify_memory_pressure(45), "low");
+        assert_eq!(classify_memory_pressure(70), "moderate");
+        assert_eq!(classify_memory_pressure(84), "moderate");
+        assert_eq!(classify_memory_pressure(85), "high");
+        assert_eq!(classify_memory_pressure(98), "high");
     }
 
     #[test]
@@ -1200,7 +1464,6 @@ mod tests {
             per_tab_threshold_mb: 300,
         };
 
-        // 1. Within 60s cooldown -> blocked
         let mut history = HashMap::new();
         history.insert(
             2001,
@@ -1214,7 +1477,6 @@ mod tests {
             CleanAction::None
         );
 
-        // 2. Past 60s cooldown, but RAM only grew +25MB (< 30MB hysteresis) -> blocked
         history.insert(
             2001,
             TrimRecord {
@@ -1227,7 +1489,6 @@ mod tests {
             CleanAction::None
         );
 
-        // 3. Past 60s cooldown AND RAM grew +35MB (>= 30MB hysteresis) -> allowed
         history.insert(
             2001,
             TrimRecord {
@@ -1271,7 +1532,6 @@ mod tests {
 
     #[test]
     fn policy_escalates_long_idle_tab_to_sleep_and_aggressive_lowers_threshold() {
-        // 230MB is below Balanced 300MB, but above Aggressive 210MB (70% of 300)
         let tabs = vec![make_tab(7, 4007, 230, 360)];
         let pressure = MemoryPressure {
             total_browser_mb: 700,

@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.3] - 2026-11-28
+
+- Automated release build and stability improvements.
+
 ## [1.0.2] - 2026-11-26
 
 - Automated release build and stability improvements.

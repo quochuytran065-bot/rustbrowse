@@ -16,9 +16,9 @@
       </div>
       <div class="tab-strip-spacer" id="tab-strip-spacer" title="Nhấp đúp để mở tab mới"></div>
     </div>
-    <!-- Permanently Pinned '+' New Tab Button (never scrolls off-screen even at 50+ tabs) -->
+    <!-- Permanently Pinned '+' New Tab Button (strictly outside horizontal scroll, never disappears at 50+ tabs) -->
     <div class="tab-strip-end">
-      <button class="btn-icon btn-new-tab" id="btn-new-tab" title="Mở tab mới (Ctrl+T)" aria-label="Mở tab mới">
+      <button class="btn-icon btn-new-tab" id="btn-new-tab" type="button" title="Mở tab mới (Ctrl+T)" aria-label="Mở tab mới">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
           <line x1="12" y1="5" x2="12" y2="19"></line>
           <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -31,23 +31,23 @@
   <div class="toolbar" id="toolbar">
     <!-- Left Navigation Cluster -->
     <div class="nav-cluster">
-      <button class="btn-icon" id="btn-back" title="Quay lại (Alt+Left)" aria-label="Quay lại">
+      <button class="btn-icon" id="btn-back" type="button" title="Quay lại (Alt+Left)" aria-label="Quay lại">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"></polyline>
         </svg>
       </button>
-      <button class="btn-icon" id="btn-forward" title="Tiến tới (Alt+Right)" aria-label="Tiến tới">
+      <button class="btn-icon" id="btn-forward" type="button" title="Tiến tới (Alt+Right)" aria-label="Tiến tới">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"></polyline>
         </svg>
       </button>
-      <button class="btn-icon" id="btn-reload" title="Tải lại trang (F5 / Ctrl+R)" aria-label="Tải lại">
+      <button class="btn-icon" id="btn-reload" type="button" title="Tải lại trang (F5 / Ctrl+R)" aria-label="Tải lại">
         <svg width="13.5" height="13.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="23 4 23 10 17 10"></polyline>
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
         </svg>
       </button>
-      <button class="btn-icon" id="btn-home" title="Trang chủ (rustbrowse://home)" aria-label="Trang chủ">
+      <button class="btn-icon" id="btn-home" type="button" title="Trang chủ (rustbrowse://home)" aria-label="Trang chủ">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
           <polyline points="9 22 9 12 15 12 15 22"></polyline>
@@ -77,7 +77,7 @@
           aria-label="Thanh địa chỉ"
         >
 
-        <!-- Live Dynamic Island Event Pill (morphs in on ad-block, video, audio, RAM clean, update) -->
+        <!-- Live Dynamic Island Event Pill -->
         <button class="island-event-pill" id="island-event-pill" type="button" hidden>
           <span class="island-event-dot" id="island-event-dot"></span>
           <span class="island-event-label" id="island-event-label"></span>
@@ -92,19 +92,25 @@
 
         <!-- Inline Quick Tools -->
         <div class="island-inline-actions">
-          <button class="btn-icon-inside" id="btn-copy-clean-url" title="Sao chép link sạch (Ctrl+Shift+C)">
+          <button class="btn-icon-inside" id="btn-palette" type="button" title="Bảng lệnh & Tìm Tab nhanh (Ctrl+K)" aria-label="Bảng lệnh nhanh">
+            <svg width="12.5" height="12.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </button>
+          <button class="btn-icon-inside" id="btn-copy-clean-url" type="button" title="Sao chép link sạch (Ctrl+Shift+C)">
             <svg width="12.5" height="12.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
             </svg>
           </button>
-          <button class="btn-icon-inside" id="btn-reader-mode" title="Chế độ đọc báo Reader Mode (Alt+R)">
+          <button class="btn-icon-inside" id="btn-reader-mode" type="button" title="Chế độ đọc báo Reader Mode (Alt+R)">
             <svg width="12.5" height="12.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
             </svg>
           </button>
-          <button class="btn-icon-inside btn-go" id="btn-go" title="Truy cập (Enter)">
+          <button class="btn-icon-inside btn-go" id="btn-go" type="button" title="Truy cập (Enter)">
             <svg width="12.5" height="12.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
               <line x1="5" y1="12" x2="19" y2="12"></line>
               <polyline points="12 5 19 12 12 19"></polyline>
@@ -117,7 +123,7 @@
     <!-- Right Action Cluster (100% Working Controls) -->
     <div class="action-cluster">
       <!-- Video Downloader Trigger + Live Badge -->
-      <button class="badge-btn badge-video" id="btn-videos" title="Trình tải Video (Video Sniffer & yt-dlp)">
+      <button class="badge-btn badge-video" id="btn-videos" type="button" title="Trình tải Video (Video Sniffer & yt-dlp)">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="23 7 16 12 23 17 23 7"></polygon>
           <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
@@ -126,7 +132,7 @@
       </button>
 
       <!-- Shield Overlay Trigger + Live Blocked Count -->
-      <button class="badge-btn badge-shield" id="btn-shield" title="RustBrowse Shield (Chặn quảng cáo & Tracker)">
+      <button class="badge-btn badge-shield" id="btn-shield" type="button" title="RustBrowse Shield (Chặn quảng cáo & Tracker)">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
         </svg>
@@ -134,20 +140,20 @@
       </button>
 
       <!-- Live RAM Monitor Badge -> Opens Floating RAM Overlay -->
-      <button class="badge-btn badge-ram ram-green" id="btn-ram-badge" title="Bộ nhớ thực tế (Bấm để mở RAM Monitor & Auto-Clean)">
+      <button class="badge-btn badge-ram ram-green" id="btn-ram-badge" type="button" title="Bộ nhớ thực tế (Bấm để mở RAM Monitor & Auto-Clean)">
         <span class="ram-dot"></span>
         <span id="ram-text">-- MB</span>
       </button>
 
       <!-- Super Boost UI Toggle -->
-      <button class="btn-icon btn-superboost" id="btn-superboost" title="Super Boost UI (Bật/tắt làm đẹp giao diện web)" aria-pressed="true">
+      <button class="btn-icon btn-superboost" id="btn-superboost" type="button" title="Super Boost UI (Bật/tắt làm đẹp giao diện web)" aria-pressed="true">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
         </svg>
       </button>
 
       <!-- Theme Toggle (Bright Glass / Midnight Dark) -->
-      <button class="btn-icon" id="btn-theme" title="Chuyển giao diện Sáng (Bright Glass) / Tối (Midnight Dark)" aria-label="Đổi giao diện">
+      <button class="btn-icon" id="btn-theme" type="button" title="Chuyển giao diện Sáng (Bright Glass) / Tối (Midnight Dark)" aria-label="Đổi giao diện">
         <svg class="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="5"></circle>
           <line x1="12" y1="1" x2="12" y2="3"></line>
@@ -165,7 +171,7 @@
       </button>
 
       <!-- Downloads Manager -->
-      <button class="btn-icon" id="btn-downloads" title="Quản lý tải xuống (Ctrl+J)" aria-label="Tải xuống">
+      <button class="btn-icon" id="btn-downloads" type="button" title="Quản lý tải xuống (Ctrl+J)" aria-label="Tải xuống">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="7 10 12 15 17 10"></polyline>
@@ -174,7 +180,7 @@
       </button>
 
       <!-- Settings & Quick Menu Overlay -->
-      <button class="btn-icon" id="btn-settings" title="Menu & Cài đặt (Alt+S)" aria-label="Cài đặt">
+      <button class="btn-icon" id="btn-settings" type="button" title="Menu & Cài đặt (Alt+S)" aria-label="Cài đặt">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>

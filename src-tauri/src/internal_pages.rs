@@ -195,6 +195,7 @@ impl InternalPages {
         let items = [
             ("home", "rustbrowse://home", "Trang chủ"),
             ("performance", "rustbrowse://performance", "RAM & Hiệu năng"),
+            ("health", "rustbrowse://health", "Health"),
             ("privacy", "rustbrowse://privacy", "Privacy Shield"),
             ("superboost", "rustbrowse://superboost", "Super Boost UI"),
             ("downloads", "rustbrowse://downloads", "Tải xuống"),
@@ -424,7 +425,7 @@ impl InternalPages {
         )
     }
 
-    /// Renders `rustbrowse://performance` (real metrics only, zero fake savings numbers)
+    /// Renders `rustbrowse://performance` (real metrics only, zero fake savings numbers, live IPC hydration)
     pub fn render_performance(ram_mb: u64, tabs_count: usize) -> String {
         let pct = ((ram_mb as f64 / 2048.0) * 100.0).clamp(4.0, 100.0);
         format!(
@@ -450,6 +451,7 @@ impl InternalPages {
                         background: var(--accent);
                         border-radius: 999px;
                     }}
+                    .chips {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }}
                 </style>
             </head>
             <body>
@@ -457,27 +459,63 @@ impl InternalPages {
                     {nav}
                     <div class="card">
                         <div class="card-title">
-                            <span>RAM Monitor &amp; Incremental Auto-Clean</span>
-                            <span class="badge">Win32 Live Metrics</span>
+                            <span>RAM &amp; CPU Monitor — Incremental Auto-Clean</span>
+                            <span class="badge" id="perf-pressure">Win32 Live</span>
                         </div>
                         <p class="muted" style="margin-bottom:18px;">
-                            Đo trực tiếp PrivateUsage &amp; WorkingSetSize từ Windows OS. Policy Auto-Clean chỉ xử lý tối đa 1 tab nền rảnh mỗi chu kỳ (cooldown 60s), bảo vệ tuyệt đối tab đang xem, audio/video và tiến trình GPU.
+                            Đo trực tiếp PrivateUsage, WorkingSetSize, CPU% (GetProcessTimes) và áp lực bộ nhớ hệ thống (GlobalMemoryStatusEx) trên luồng nền — 0ms khóa giao diện.
                         </p>
-                        <div class="grid-2" style="margin-bottom:18px;">
+                        <div class="grid-3" style="margin-bottom:14px;">
                             <div class="stat-box">
                                 <div class="stat-val" id="perf-ram">{ram_mb} MB</div>
-                                <div class="stat-label">Tổng RAM Trình duyệt (Thực tế)</div>
+                                <div class="stat-label">Working Set Thực Tế</div>
                             </div>
                             <div class="stat-box">
-                                <div class="stat-val">{tabs_count}</div>
+                                <div class="stat-val" id="perf-cpu">0.0%</div>
+                                <div class="stat-label">CPU Trình Duyệt (OS)</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-val" id="perf-tabs">{tabs_count}</div>
                                 <div class="stat-label">Tab Đang Mở</div>
                             </div>
                         </div>
-                        <div class="bar-track"><div class="bar-fill"></div></div>
-                        <div class="muted" style="font-size:12px;">Thang tham chiếu: 0 MB — 2048 MB (không giới hạn cứng JS heap để tránh crash End Process).</div>
+                        <div class="chips">
+                            <span class="badge" id="p-browser">Browser: -- MB</span>
+                            <span class="badge" id="p-gpu">GPU: -- MB</span>
+                            <span class="badge" id="p-renderer">Renderer: -- MB</span>
+                            <span class="badge" id="p-utility">Utility: -- MB</span>
+                            <span class="badge" id="p-sys">Hệ thống: --%</span>
+                        </div>
+                        <div class="bar-track"><div class="bar-fill" id="perf-bar"></div></div>
+                        <div class="muted" style="font-size:12px;">Không đặt giới hạn cứng JS heap để tránh lỗi End Process; các tab dùng chung tiến trình renderer được gắn nhãn trung thực "Shared renderer".</div>
                     </div>
                 </div>
-                <script>{boot_js}</script>
+                <script>{boot_js}
+                    window.__rbInvoke('set_perf_panel_open', {{ open: true }});
+                    window.addEventListener('beforeunload', () => {{
+                        window.__rbInvoke('set_perf_panel_open', {{ open: false }});
+                    }});
+                    window.addEventListener('pagehide', () => {{
+                        window.__rbInvoke('set_perf_panel_open', {{ open: false }});
+                    }});
+                    async function tickPerf() {{
+                        const mem = await window.__rbInvoke('get_memory_report');
+                        if (!mem) return;
+                        const setT = (id, v) => {{ const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; }};
+                        const ws = Math.round(mem.totalWorkingSetMb || 0);
+                        setT('perf-ram', ws + ' MB');
+                        setT('perf-cpu', (typeof mem.totalCpuPercent === 'number' ? mem.totalCpuPercent.toFixed(1) : '0.0') + '%');
+                        setT('p-browser', 'Browser: ' + Math.round(mem.browserMb || 0) + ' MB');
+                        setT('p-gpu', 'GPU: ' + Math.round(mem.gpuMb || 0) + ' MB');
+                        setT('p-renderer', 'Renderer: ' + Math.round(mem.rendererMb || 0) + ' MB');
+                        setT('p-utility', 'Utility: ' + Math.round(mem.utilityMb || 0) + ' MB');
+                        setT('p-sys', 'Hệ thống: ' + (mem.systemMemoryLoadPct ?? '--') + '% (' + (mem.memoryPressureLevel || 'low') + ')');
+                        const bar = document.getElementById('perf-bar');
+                        if (bar) bar.style.width = Math.min(100, Math.max(4, (ws / 2048) * 100)).toFixed(1) + '%';
+                    }}
+                    tickPerf();
+                    setInterval(tickPerf, 1500);
+                </script>
             </body>
             </html>"###,
             css = Self::BASE_CSS,
@@ -486,6 +524,156 @@ impl InternalPages {
             ram_mb = ram_mb,
             tabs_count = tabs_count,
             pct = pct,
+        )
+    }
+
+    /// Renders `rustbrowse://health` (Version, Startup Phase Timings, Crash Ring Buffer, Live RAM/CPU, Diagnostics Export)
+    pub fn render_health(version: &str, ram_mb: u64, active_tabs: usize) -> String {
+        format!(
+            r###"<!DOCTYPE html>
+            <html lang="vi" data-theme="light">
+            <head>
+                <meta charset="utf-8">
+                <title>RustBrowse — System Health &amp; Diagnostics</title>
+                <style>
+                    {css}
+                    .diag-pre {{
+                        background: var(--card-elevated);
+                        border: 1px solid var(--card-border);
+                        border-radius: 12px;
+                        padding: 14px;
+                        font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+                        font-size: 12px;
+                        line-height: 1.5;
+                        color: var(--text-main);
+                        overflow-x: auto;
+                        max-height: 320px;
+                        white-space: pre-wrap;
+                        word-break: break-word;
+                        margin-top: 12px;
+                        display: none;
+                    }}
+                    .diag-pre.visible {{ display: block; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    {nav}
+                    <div class="card">
+                        <div class="card-title">
+                            <span>RustBrowse Health Monitor</span>
+                            <span class="badge" id="h-ver">v{version}</span>
+                        </div>
+                        <p class="muted" style="margin-bottom:18px;">
+                            Theo dõi thời gian khởi động từng pha, sức khỏe bộ nhớ/CPU thực tế, nhật ký cách ly crash WebView2 và xuất báo cáo chẩn đoán sạch (không chứa mật khẩu/cookie).
+                        </p>
+                        <div class="grid-3" style="margin-bottom:16px;">
+                            <div class="stat-box">
+                                <div class="stat-val" id="h-shell">-- ms</div>
+                                <div class="stat-label">Pha Shell Ready (t_shell_ready_ms)</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-val" id="h-tab1">-- ms</div>
+                                <div class="stat-label">Pha Tab 1 Ready (t_tab1_ready_ms)</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-val" id="h-crashes">0</div>
+                                <div class="stat-label">Sự Cố WebView2 Đã Cách Ly</div>
+                            </div>
+                        </div>
+                        <div class="grid-3">
+                            <div class="stat-box">
+                                <div class="stat-val" id="h-ram">{ram_mb} MB</div>
+                                <div class="stat-label">RAM Working Set Hiện Tại</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-val" id="h-cpu">0.0%</div>
+                                <div class="stat-label">CPU Trình Duyệt (OS)</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-val" id="h-tabs">{active_tabs}</div>
+                                <div class="stat-label">Tab Đang Mở</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">
+                            <span>Nhật Ký Crash Isolation (Ring Buffer)</span>
+                            <span class="badge" id="h-uptime">Uptime: --s</span>
+                        </div>
+                        <div id="h-crash-path" class="muted" style="font-size:12px;margin-bottom:10px;"></div>
+                        <div id="h-crash-list" class="muted">Không có sự cố crash nào trong phiên này.</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">
+                            <span>Xuất Báo Cáo Chẩn Đoán (Sanitized Diagnostics)</span>
+                            <div style="display:flex;gap:8px;">
+                                <button class="btn btn-primary" id="btn-export-diag">Xem Trước Báo Cáo</button>
+                                <button class="btn" id="btn-copy-diag" style="display:none;">Sao Chép JSON</button>
+                            </div>
+                        </div>
+                        <p class="muted">Báo cáo chỉ gồm phiên bản, thời gian khởi động, thống kê RAM/CPU và loại sự cố — tuyệt đối không chứa cookie, mật khẩu hay token URL.</p>
+                        <pre class="diag-pre" id="diag-preview"></pre>
+                    </div>
+                </div>
+                <script>{boot_js}
+                    function escHtml(s) {{
+                        return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                    }}
+                    async function loadHealth() {{
+                        const h = await window.__rbInvoke('get_health_report');
+                        if (!h) return;
+                        const setT = (id, v) => {{ const e = document.getElementById(id); if (e) e.textContent = v; }};
+                        if (h.version) setT('h-ver', 'v' + h.version);
+                        setT('h-shell', (h.tShellReadyMs ?? 0) + ' ms');
+                        setT('h-tab1', (h.tTab1ReadyMs ?? 0) + ' ms');
+                        setT('h-crashes', String(h.crashCount ?? 0));
+                        setT('h-tabs', String(h.tabCount ?? {active_tabs}));
+                        setT('h-uptime', 'Uptime: ' + (h.uptimeSecs ?? 0) + 's');
+                        if (h.memoryReport) {{
+                            setT('h-ram', Math.round(h.memoryReport.totalWorkingSetMb || 0) + ' MB');
+                            setT('h-cpu', (typeof h.memoryReport.totalCpuPercent === 'number' ? h.memoryReport.totalCpuPercent.toFixed(1) : '0.0') + '%');
+                        }}
+                        if (h.crashLogPath) setT('h-crash-path', 'Crash log: ' + h.crashLogPath);
+                        const listEl = document.getElementById('h-crash-list');
+                        if (listEl && Array.isArray(h.crashes) && h.crashes.length > 0) {{
+                            listEl.innerHTML = h.crashes.map((c) => {{
+                                return '<div class="row">'
+                                    + '<div><div style="font-weight:600;font-size:13px;">' + escHtml(c.kind) + ' (Tab #' + escHtml(c.tabId) + ')</div>'
+                                    + '<div class="muted">' + escHtml(c.urlDomain || 'internal') + ' • ' + new Date(c.timestampMs || Date.now()).toLocaleTimeString() + '</div></div>'
+                                    + '<span class="badge">' + (c.recovered ? 'Đã khôi phục' : 'Đã ghi nhận') + '</span>'
+                                    + '</div>';
+                            }}).join('');
+                        }}
+                    }}
+                    let lastDiag = '';
+                    document.getElementById('btn-export-diag')?.addEventListener('click', async () => {{
+                        const json = await window.__rbInvoke('export_diagnostics_report');
+                        const pre = document.getElementById('diag-preview');
+                        const copyBtn = document.getElementById('btn-copy-diag');
+                        if (pre) {{
+                            lastDiag = typeof json === 'string' ? json : JSON.stringify(json || {{}}, null, 2);
+                            pre.textContent = lastDiag;
+                            pre.classList.add('visible');
+                            if (copyBtn) copyBtn.style.display = 'inline-flex';
+                        }}
+                    }});
+                    document.getElementById('btn-copy-diag')?.addEventListener('click', async () => {{
+                        if (!lastDiag) return;
+                        try {{ await navigator.clipboard.writeText(lastDiag); }} catch(e) {{}}
+                    }});
+                    loadHealth();
+                </script>
+            </body>
+            </html>"###,
+            css = Self::BASE_CSS,
+            nav = Self::nav_bar("health"),
+            boot_js = Self::THEME_BOOT_JS,
+            version = version,
+            ram_mb = ram_mb,
+            active_tabs = active_tabs,
         )
     }
 

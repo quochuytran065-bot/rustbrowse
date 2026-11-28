@@ -6,22 +6,63 @@ mod overlay;
 mod shield;
 mod storage;
 mod tabs;
-mod updater_engine;
 mod video_downloader;
 mod watchdog;
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
-use tauri::{AppHandle, Manager, State, WindowEvent};
-use tracing::info;
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri_plugin_updater::UpdaterExt;
+use tracing::{info, warn};
 
 use shield::{ActiveShield, ShieldStats};
-use tabs::{TabInfo, TabManager};
-use updater_engine::{SuperBoostUpdateEngine, UpdateChannel, UpdateDashboardState};
+use tabs::{CrashEvent, TabInfo, TabManager};
 use video_downloader::VideoDownloadManager;
 use watchdog::{AutoCleanLevel, ProcessMemoryReport, Watchdog};
 
 pub const BROWSER_FLAGS: &str = "--use-angle=d3d11 --enable-gpu-rasterization --enable-zero-copy --enable-oop-rasterization --ignore-gpu-blocklist --enable-smooth-scrolling --force-color-profile=srgb --js-flags=\"--optimize-for-size\" --disable-features=BackForwardCache,Prerender2,OptimizationHints,MediaRouter,PreloadMediaEngagementData,InterestFeedContentSuggestions,AutofillServerCommunication,Translate --enable-features=IntensiveWakeUpThrottling,AsyncDns,ParallelDownloading --enable-quic --disable-background-networking --disable-component-update --disable-sync --disable-metrics --disable-default-apps --no-first-run --disk-cache-size=67108864 --media-cache-size=33554432";
+
+pub struct StartupMetrics {
+    pub boot_instant: Instant,
+    pub t_shell_ready_ms: AtomicU64,
+    pub t_tab1_ready_ms: AtomicU64,
+}
+
+impl StartupMetrics {
+    pub fn new(boot_instant: Instant) -> Self {
+        Self {
+            boot_instant,
+            t_shell_ready_ms: AtomicU64::new(0),
+            t_tab1_ready_ms: AtomicU64::new(0),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCheckResult {
+    pub available: bool,
+    pub version: Option<String>,
+    pub current_version: String,
+    pub body: Option<String>,
+    pub configured: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthReport {
+    pub version: String,
+    pub t_shell_ready_ms: u64,
+    pub t_tab1_ready_ms: u64,
+    pub uptime_secs: u64,
+    pub tab_count: usize,
+    pub crash_count: usize,
+    pub crashes: Vec<CrashEvent>,
+    pub crash_log_path: String,
+    pub memory_report: ProcessMemoryReport,
+}
 
 fn get_main_window(app: &AppHandle) -> Result<tauri::Window, String> {
     app.get_window("main")
@@ -177,8 +218,77 @@ fn close_overlay(app: AppHandle) -> Result<(), String> {
 }
 
 // ============================================================================
-// RAM Watchdog, Shield & Super Boost Commands
+// RAM Watchdog, Health Diagnostics, Shield & Super Boost Commands
 // ============================================================================
+
+#[tauri::command]
+fn set_perf_panel_open(watchdog: State<'_, Arc<Watchdog>>, open: bool) -> Result<bool, String> {
+    watchdog.set_perf_panel_open(open);
+    Ok(watchdog.is_perf_panel_open())
+}
+
+#[tauri::command]
+fn get_health_report(
+    app: AppHandle,
+    startup: State<'_, StartupMetrics>,
+    tab_manager: State<'_, TabManager>,
+    watchdog: State<'_, Arc<Watchdog>>,
+) -> HealthReport {
+    HealthReport {
+        version: app.package_info().version.to_string(),
+        t_shell_ready_ms: startup.t_shell_ready_ms.load(Ordering::Relaxed),
+        t_tab1_ready_ms: startup.t_tab1_ready_ms.load(Ordering::Relaxed),
+        uptime_secs: startup.boot_instant.elapsed().as_secs(),
+        tab_count: tab_manager.tab_count(),
+        crash_count: tab_manager.crash_count(),
+        crashes: tab_manager.list_crashes(),
+        crash_log_path: tabs::crash_log_path().to_string_lossy().to_string(),
+        memory_report: watchdog.get_memory_report(),
+    }
+}
+
+#[tauri::command]
+fn export_diagnostics_report(
+    app: AppHandle,
+    startup: State<'_, StartupMetrics>,
+    tab_manager: State<'_, TabManager>,
+    watchdog: State<'_, Arc<Watchdog>>,
+) -> String {
+    let mem = watchdog.get_memory_report();
+    let payload = serde_json::json!({
+        "app": "RustBrowse",
+        "version": app.package_info().version.to_string(),
+        "os": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "startup": {
+            "tShellReadyMs": startup.t_shell_ready_ms.load(Ordering::Relaxed),
+            "tTab1ReadyMs": startup.t_tab1_ready_ms.load(Ordering::Relaxed),
+            "uptimeSecs": startup.boot_instant.elapsed().as_secs(),
+        },
+        "tabs": {
+            "count": tab_manager.tab_count(),
+        },
+        "memory": {
+            "totalPrivateMb": mem.total_private_mb,
+            "totalWorkingSetMb": mem.total_working_set_mb,
+            "browserMb": mem.browser_mb,
+            "gpuMb": mem.gpu_mb,
+            "rendererMb": mem.renderer_mb,
+            "utilityMb": mem.utility_mb,
+            "processCount": mem.process_count,
+            "rendererCount": mem.renderer_count,
+            "totalCpuPercent": mem.total_cpu_percent,
+            "systemMemoryLoadPct": mem.system_memory_load_pct,
+            "systemTotalRamMb": mem.system_total_ram_mb,
+            "systemAvailRamMb": mem.system_avail_ram_mb,
+            "memoryPressureLevel": mem.memory_pressure_level,
+            "autoCleanLevel": mem.auto_clean_level,
+            "totalCleanedMb": mem.total_cleaned_mb,
+        },
+        "crashes": tab_manager.list_crashes(),
+    });
+    serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string())
+}
 
 #[tauri::command]
 fn clean_ram(
@@ -315,102 +425,174 @@ fn start_element_zapper(app: AppHandle, tab_manager: State<'_, TabManager>) -> R
 }
 
 // ============================================================================
-// SuperBoost Auto Update Engine Commands
+// Auto-Updater Commands (Safe when pubkey/endpoint is unconfigured)
 // ============================================================================
 
-#[tauri::command]
-fn get_update_dashboard_state(
-    engine: State<'_, Arc<SuperBoostUpdateEngine>>,
-) -> UpdateDashboardState {
-    engine.snapshot()
+async fn run_update_check(app: &AppHandle, emit_island: bool) -> UpdateCheckResult {
+    let current_version = app.package_info().version.to_string();
+
+    let updater = match app.updater() {
+        Ok(u) => u,
+        Err(e) => {
+            warn!(error = %e, "Auto-updater not configured or unavailable.");
+            return UpdateCheckResult {
+                available: false,
+                version: None,
+                current_version,
+                body: None,
+                configured: false,
+                message: format!("Updater chưa cấu hình khóa ký: {}", e),
+            };
+        }
+    };
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            let ver = update.version.clone();
+            let body = update.body.clone();
+            info!(version = %ver, "New RustBrowse update available.");
+            if emit_island {
+                if let Some(main_wv) = app.get_webview_window("main") {
+                    let _ = main_wv.emit(
+                        "island-event",
+                        serde_json::json!({
+                            "kind": "update-available",
+                            "title": format!("Bản cập nhật v{}", ver),
+                            "detail": "Sẵn sàng cài đặt trong Menu"
+                        }),
+                    );
+                }
+            }
+            UpdateCheckResult {
+                available: true,
+                version: Some(ver),
+                current_version,
+                body,
+                configured: true,
+                message: "Đã tìm thấy bản cập nhật mới".to_string(),
+            }
+        }
+        Ok(None) => UpdateCheckResult {
+            available: false,
+            version: None,
+            current_version,
+            body: None,
+            configured: true,
+            message: "RustBrowse đang ở phiên bản mới nhất".to_string(),
+        },
+        Err(e) => {
+            warn!(error = %e, "Update check failed.");
+            UpdateCheckResult {
+                available: false,
+                version: None,
+                current_version,
+                body: None,
+                configured: false,
+                message: format!("Không thể kiểm tra cập nhật: {}", e),
+            }
+        }
+    }
 }
 
 #[tauri::command]
-async fn check_for_updates(
-    app: AppHandle,
-    engine: State<'_, Arc<SuperBoostUpdateEngine>>,
-) -> Result<UpdateDashboardState, String> {
-    Ok(engine.check_for_updates(&app, true, true).await)
+async fn check_for_updates(app: AppHandle) -> Result<UpdateCheckResult, String> {
+    Ok(run_update_check(&app, true).await)
 }
 
 #[tauri::command]
-async fn download_update_background(
-    app: AppHandle,
-    engine: State<'_, Arc<SuperBoostUpdateEngine>>,
-) -> Result<UpdateDashboardState, String> {
-    Ok(engine.download_and_stage(&app).await)
-}
+async fn install_update(app: AppHandle) -> Result<String, String> {
+    let updater = app
+        .updater()
+        .map_err(|e| format!("Updater chưa cấu hình: {}", e))?;
 
-#[tauri::command]
-async fn install_update(
-    app: AppHandle,
-    engine: State<'_, Arc<SuperBoostUpdateEngine>>,
-    video_mgr: State<'_, VideoDownloadManager>,
-    tab_mgr: State<'_, TabManager>,
-) -> Result<String, String> {
-    let has_downloads = video_mgr.has_active_downloads();
-    let has_media = tab_mgr.list_tabs().iter().any(|t| t.is_playing_audio);
-    // Persist current open tabs into SQLite session.db before restart
-    storage::SessionStorage::save_session(&tab_mgr.list_tabs());
-    engine
-        .install_and_restart(&app, true, has_downloads, has_media)
+    let update = updater
+        .check()
         .await
-}
+        .map_err(|e| format!("Kiểm tra cập nhật thất bại: {}", e))?;
 
-#[tauri::command]
-fn set_update_channel(
-    app: AppHandle,
-    engine: State<'_, Arc<SuperBoostUpdateEngine>>,
-    channel: String,
-) -> Result<UpdateDashboardState, String> {
-    let parsed = UpdateChannel::from_str_lossy(&channel);
-    Ok(engine.set_channel(&app, parsed))
-}
+    let Some(update) = update else {
+        return Ok("Đã ở phiên bản mới nhất".to_string());
+    };
 
-#[tauri::command]
-fn set_auto_install_on_exit(
-    app: AppHandle,
-    engine: State<'_, Arc<SuperBoostUpdateEngine>>,
-    enabled: bool,
-) -> Result<UpdateDashboardState, String> {
-    Ok(engine.set_auto_install_on_exit(&app, enabled))
-}
+    let version = update.version.clone();
+    let app_for_progress = app.clone();
+    let mut downloaded: usize = 0;
 
-#[tauri::command]
-fn set_update_check_interval(
-    app: AppHandle,
-    engine: State<'_, Arc<SuperBoostUpdateEngine>>,
-    minutes: u64,
-) -> Result<UpdateDashboardState, String> {
-    Ok(engine.set_check_interval_minutes(&app, minutes))
+    update
+        .download_and_install(
+            move |chunk_len, content_len| {
+                downloaded += chunk_len;
+                let pct = content_len
+                    .filter(|&total| total > 0)
+                    .map(|total| ((downloaded as f64 / total as f64) * 100.0).min(100.0) as u32)
+                    .unwrap_or(0);
+                if let Some(main_wv) = app_for_progress.get_webview_window("main") {
+                    let _ = main_wv.emit(
+                        "island-event",
+                        serde_json::json!({
+                            "kind": "update-progress",
+                            "title": format!("Đang tải v{}", version),
+                            "detail": format!("{}%", pct)
+                        }),
+                    );
+                }
+            },
+            || {
+                info!("Update downloaded and ready to install.");
+            },
+        )
+        .await
+        .map_err(|e| format!("Tải/cài đặt cập nhật thất bại: {}", e))?;
+
+    app.restart();
 }
 
 // ============================================================================
 // Application Entrypoint
 // ============================================================================
 
+fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let loc = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown".to_string());
+        let msg = info
+            .payload()
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| info.payload().downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("non-string panic payload");
+        tabs::append_crash_log_line(&format!("PANIC at {} :: {}", loc, msg));
+        default_hook(info);
+    }));
+}
+
 fn main() {
-    // 1. Safe Chromium Low-RAM & Hardware Accelerated Flags (no OOM cap, smooth scrolling enabled)
+    let boot_instant = Instant::now();
+
+    // 1. Install sanitized panic logger to %LOCALAPPDATA%\RustBrowse\User Data\crash.log
+    install_panic_hook();
+
+    // 2. Safe Chromium Low-RAM & Hardware Accelerated Flags
     std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", BROWSER_FLAGS);
 
-    // 2. Initialize tracing
+    // 3. Initialize tracing
     tracing_subscriber::fmt::init();
 
-    // 3. Auto-Strip Cache on Startup in Background
-    optimizer::StartupOptimizer::launch_background_cache_clean();
-
-    // 4. Initialize Core Engines
+    // 4. Initialize lightweight core engines (heavy work runs async/deferred in background)
+    let startup_metrics = StartupMetrics::new(boot_instant);
     let active_shield = ActiveShield::new();
     let watchdog = Watchdog::new();
     let video_manager = VideoDownloadManager::new();
-    let update_engine = SuperBoostUpdateEngine::new(env!("CARGO_PKG_VERSION").to_string());
 
     // 5. Build and Run Tauri v2 Application
     tauri::Builder::default()
+        .manage(startup_metrics)
         .manage(active_shield)
         .manage(watchdog)
         .manage(video_manager)
-        .manage(update_engine)
         .register_asynchronous_uri_scheme_protocol("rustbrowse", move |ctx, request, responder| {
             let app = ctx.app_handle();
             let uri = request.uri().to_string();
@@ -430,7 +612,7 @@ fn main() {
                         r.total_working_set_mb
                     }
                 })
-                .unwrap_or_else(Watchdog::total_browser_ram_mb);
+                .unwrap_or(0);
 
             let tabs_count = app
                 .try_state::<TabManager>()
@@ -439,8 +621,10 @@ fn main() {
 
             let active_downloads = app
                 .try_state::<VideoDownloadManager>()
-                .map(|v| if v.has_active_downloads() { 1 } else { 0 })
+                .map(|v| usize::from(v.has_active_downloads()))
                 .unwrap_or(0);
+
+            let version = app.package_info().version.to_string();
 
             let body = if uri.contains("selftest") {
                 internal_pages::InternalPages::render_selftest(rules_count, blocked_count, ram_mb)
@@ -452,20 +636,26 @@ fn main() {
                 internal_pages::InternalPages::render_superboost(ram_mb, tabs_count)
             } else if uri.contains("downloads") {
                 internal_pages::InternalPages::render_downloads(active_downloads)
-            } else if uri.contains("updates") {
-                internal_pages::InternalPages::render_updates(env!("CARGO_PKG_VERSION"))
             } else if uri.contains("settings") {
                 internal_pages::InternalPages::render_settings(ram_mb, tabs_count, blocked_count)
+            } else if uri.contains("health") {
+                internal_pages::InternalPages::render_health(&version, ram_mb, tabs_count)
+            } else if uri.contains("updates") {
+                internal_pages::InternalPages::render_updates(&version)
             } else {
                 internal_pages::InternalPages::render_home(ram_mb, tabs_count, blocked_count)
             };
 
-            let response = tauri::http::Response::builder()
+            match tauri::http::Response::builder()
                 .header("Content-Type", "text/html; charset=utf-8")
                 .header("Access-Control-Allow-Origin", "*")
                 .body(body.into_bytes())
-                .unwrap();
-            responder.respond(response);
+            {
+                Ok(response) => responder.respond(response),
+                Err(e) => {
+                    warn!(error = %e, "Failed to construct rustbrowse:// HTTP response");
+                }
+            }
         })
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -492,7 +682,10 @@ fn main() {
             // Floating Overlay
             open_overlay,
             close_overlay,
-            // Watchdog, Shield & Super Boost
+            // Watchdog, Health Diagnostics, Shield & Super Boost
+            set_perf_panel_open,
+            get_health_report,
+            export_diagnostics_report,
             clean_ram,
             get_memory_report,
             set_auto_clean_level,
@@ -506,14 +699,9 @@ fn main() {
             copy_clean_url,
             toggle_reader_mode,
             start_element_zapper,
-            // SuperBoost Auto Update Engine
-            get_update_dashboard_state,
+            // Auto-Updater
             check_for_updates,
-            download_update_background,
             install_update,
-            set_update_channel,
-            set_auto_install_on_exit,
-            set_update_check_interval,
             // Video Downloader
             video_downloader::report_detected_videos,
             video_downloader::get_detected_videos,
@@ -530,7 +718,19 @@ fn main() {
             video_downloader::get_sniffer_enabled,
         ])
         .setup(|app| {
-            info!("RustBrowse Tauri v2 initializing shell window.");
+            let t_shell_ready_ms = app
+                .try_state::<StartupMetrics>()
+                .map(|s| {
+                    let ms = s.boot_instant.elapsed().as_millis() as u64;
+                    s.t_shell_ready_ms.store(ms, Ordering::Relaxed);
+                    ms
+                })
+                .unwrap_or(0);
+            info!(
+                t_shell_ready_ms = t_shell_ready_ms,
+                "RustBrowse Tauri v2 shell window ready."
+            );
+
             let window = app.get_window("main").ok_or("Failed to get main window")?;
 
             // Confine Topbar webview to exactly 74px height
@@ -551,7 +751,20 @@ fn main() {
             tab_mgr.setup_initial_tabs(&window)?;
             app.manage(tab_mgr);
 
-            // Handle window resize / move / close to maintain bounds, session & overlay lifecycle
+            let t_tab1_ready_ms = app
+                .try_state::<StartupMetrics>()
+                .map(|s| {
+                    let ms = s.boot_instant.elapsed().as_millis() as u64;
+                    s.t_tab1_ready_ms.store(ms, Ordering::Relaxed);
+                    ms
+                })
+                .unwrap_or(0);
+            info!(
+                t_tab1_ready_ms = t_tab1_ready_ms,
+                "RustBrowse Tab 1 ready (zero pre-warmed spare overhead)."
+            );
+
+            // Handle window resize / move / close to maintain bounds & overlay lifecycle
             let window_clone = window.clone();
             window.on_window_event(move |event| match event {
                 WindowEvent::Resized(_) => {
@@ -585,35 +798,21 @@ fn main() {
                     let _ = overlay::close_overlay(window_clone.app_handle());
                 }
                 WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
-                    let handle = window_clone.app_handle();
-                    if let Some(tm) = handle.try_state::<TabManager>() {
-                        storage::SessionStorage::save_session(&tm.list_tabs());
-                    }
-                    if let Some(eng) = handle.try_state::<Arc<SuperBoostUpdateEngine>>() {
-                        let busy_dl = handle
-                            .try_state::<VideoDownloadManager>()
-                            .map(|v| v.has_active_downloads())
-                            .unwrap_or(false);
-                        if eng.should_install_on_exit() && !busy_dl {
-                            info!("Staged update ready on exit; applying safely.");
-                            let app_exit = handle.clone();
-                            tauri::async_runtime::spawn(async move {
-                                if let Some(e) = app_exit.try_state::<Arc<SuperBoostUpdateEngine>>()
-                                {
-                                    let _ = e.install_and_restart(&app_exit, false, false, false).await;
-                                }
-                            });
-                        }
-                    }
-                    overlay::destroy_overlay(handle);
+                    overlay::destroy_overlay(window_clone.app_handle());
                 }
                 _ => {}
             });
 
-            // Background 4s live RAM & tab state sync loop (never blocks UI thread)
+            // Defer non-essential startup cache maintenance so boot stays instant
+            tauri::async_runtime::spawn(async move {
+                optimizer::StartupOptimizer::launch_background_cache_clean();
+            });
+
+            // Background 4s live RAM & tab state sync loop (reads O(1) cached snapshot, never blocks UI)
             let app_for_sync = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let mut interval = tokio::time::interval(Duration::from_secs(4));
+                interval.tick().await; // skip immediate tick at t=0
                 loop {
                     interval.tick().await;
                     if let Some(tm) = app_for_sync.try_state::<TabManager>() {
@@ -623,33 +822,14 @@ fn main() {
                 }
             });
 
-            // Post-boot 10s crash-loop rollback guard: mark running version healthy once stable
-            let app_for_health = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(Duration::from_secs(10)).await;
-                if let Some(eng) = app_for_health.try_state::<Arc<SuperBoostUpdateEngine>>() {
-                    eng.mark_boot_healthy();
-                }
-            });
-
-            // Background startup + periodic auto-update check (non-blocking, respectful interval)
+            // Deferred auto-update check 8 seconds after boot (graceful if unconfigured/offline)
             let app_for_update = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(Duration::from_secs(4)).await;
-                loop {
-                    let wait_dur = if let Some(eng) =
-                        app_for_update.try_state::<Arc<SuperBoostUpdateEngine>>()
-                    {
-                        let _ = eng.check_for_updates(&app_for_update, true, true).await;
-                        eng.check_interval_duration()
-                    } else {
-                        Duration::from_secs(360 * 60)
-                    };
-                    tokio::time::sleep(wait_dur).await;
-                }
+                tokio::time::sleep(Duration::from_secs(8)).await;
+                let _ = run_update_check(&app_for_update, true).await;
             });
 
-            info!("RustBrowse Multi-Webview Shell ready (unlimited tabs, overlay, SuperBoost updater).");
+            info!("RustBrowse Multi-Webview Shell ready (Repair V6).");
             Ok(())
         })
         .run(tauri::generate_context!())

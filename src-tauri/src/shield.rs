@@ -214,12 +214,32 @@ impl ActiveShield {
         if url.starts_with("rustbrowse://")
             || url.starts_with("file://")
             || url.starts_with("about:")
+            || url.starts_with("data:")
+            || url.starts_with("blob:")
+        {
+            return false;
+        }
+
+        // Fast-path allow for legitimate image CDNs so progressive image loading is never blocked
+        let lower = url.to_ascii_lowercase();
+        if resource_type.eq_ignore_ascii_case("image")
+            && (lower.contains("ytimg.com")
+                || lower.contains("ggpht.com")
+                || lower.contains("googleusercontent.com")
+                || lower.contains("gstatic.com")
+                || lower.contains("fbcdn.net")
+                || lower.contains("twimg.com")
+                || lower.contains("unsplash.com")
+                || lower.contains("wikimedia.org")
+                || lower.contains("githubusercontent.com")
+                || lower.contains("imgur.com")
+                || lower.contains("akamaized.net")
+                || lower.contains("cloudfront.net"))
         {
             return false;
         }
 
         // Fast-path substring check for obvious gambling/malvertising tokens
-        let lower = url.to_ascii_lowercase();
         if lower.contains("tx88")
             || lower.contains("lu88")
             || lower.contains("huvip")

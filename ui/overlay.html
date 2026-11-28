@@ -114,11 +114,11 @@
       background: var(--rb-bg-elevated);
       border: 1px solid var(--rb-border-subtle);
       border-radius: var(--rb-radius-md);
-      padding: 10px 12px;
+      padding: 9px 11px;
     }
 
     .metric-val {
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 700;
       font-variant-numeric: tabular-nums;
       color: var(--rb-text-primary);
@@ -133,7 +133,7 @@
     .breakdown-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 5px;
       font-size: var(--rb-text-xs);
       color: var(--rb-text-secondary);
     }
@@ -244,33 +244,12 @@
       transition: transform var(--rb-dur-fast) var(--rb-ease-spring);
     }
 
-    .btn:hover {
-      background: var(--rb-bg-hover);
-    }
-
-    .btn:active {
-      transform: scale(0.96);
-    }
-
-    .btn-primary {
-      background: var(--rb-accent);
-      color: #ffffff;
-      border-color: transparent;
-    }
-
-    .btn-primary:hover {
-      background: var(--rb-accent-hover);
-    }
-
-    .btn-sm {
-      padding: 4px 8px;
-      font-size: var(--rb-text-2xs);
-    }
-
-    .btn:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-    }
+    .btn:hover { background: var(--rb-bg-hover); }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary { background: var(--rb-accent); color: #ffffff; border-color: transparent; }
+    .btn-primary:hover { background: var(--rb-accent-hover); }
+    .btn-sm { padding: 4px 8px; font-size: var(--rb-text-2xs); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
     .menu-item {
       width: 100%;
@@ -287,17 +266,47 @@
       font-family: var(--rb-font-sans);
       cursor: pointer;
       text-align: left;
+      gap: 8px;
     }
 
-    .menu-item:hover {
+    .menu-item:hover,
+    .menu-item.selected {
       background: var(--rb-bg-hover);
-      border-color: var(--rb-border-subtle);
+      border-color: var(--rb-border-accent);
     }
 
     .menu-sep {
       height: 1px;
       background: var(--rb-border-subtle);
       margin: 2px 0;
+    }
+
+    .palette-input {
+      width: 100%;
+      padding: 9px 12px;
+      border-radius: var(--rb-radius-md);
+      border: 1px solid var(--rb-border-default);
+      background: var(--rb-bg-elevated);
+      color: var(--rb-text-primary);
+      font-size: var(--rb-text-base);
+      font-family: var(--rb-font-sans);
+      outline: none;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .palette-input:focus {
+      border-color: var(--rb-accent);
+      box-shadow: var(--rb-shadow-focus);
+    }
+
+    .palette-section-lbl {
+      font-size: var(--rb-text-2xs);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--rb-text-muted);
+      padding: 4px 4px 0;
     }
 
     .empty-state {
@@ -320,7 +329,7 @@
     <div class="panel-card">
       <div class="panel-header">
         <div class="panel-title" id="panel-title">RustBrowse</div>
-        <button class="panel-close" id="btn-close-overlay" title="Đóng (Esc)">&times;</button>
+        <button class="panel-close" id="btn-close-overlay" type="button" title="Đóng (Esc)">&times;</button>
       </div>
       <div class="panel-body" id="panel-body">
         <div class="empty-state">Đang tải dữ liệu...</div>
@@ -358,8 +367,22 @@
       const btnClose = document.getElementById('btn-close-overlay');
 
       let currentPanel = new URLSearchParams(location.search).get('panel') || 'ram';
+      let ramPollTimer = null;
+      let perfGateOpen = false;
+
+      function stopRamLoop() {
+        if (ramPollTimer) {
+          clearInterval(ramPollTimer);
+          ramPollTimer = null;
+        }
+        if (perfGateOpen) {
+          perfGateOpen = false;
+          invoke('set_perf_panel_open', { open: false });
+        }
+      }
 
       function closeOverlay() {
+        stopRamLoop();
         invoke('close_overlay');
       }
 
@@ -383,9 +406,51 @@
           .replace(/"/g, '&quot;');
       }
 
-      // ---- Panel 1: Real Live RAM Monitor ----
+      function pressureLabel(level) {
+        const l = String(level || 'low').toLowerCase();
+        if (l === 'high') return { text: 'Cao', cls: 'chip-danger' };
+        if (l === 'moderate') return { text: 'Trung bình', cls: 'chip-warning' };
+        return { text: 'Thấp', cls: 'chip-success' };
+      }
+
+      // ---- Panel 1: Zero-Freeze Live RAM + CPU Monitor (Incremental DOM Updates) ----
+      async function updateRamMetricsOnly() {
+        const mem = await invoke('get_memory_report');
+        if (!mem) return;
+
+        const setText = (id, val) => {
+          const el = document.getElementById(id);
+          if (el && el.textContent !== val) el.textContent = val;
+        };
+
+        setText('ram-ws-val', `${Math.round(mem.totalWorkingSetMb || 0)} MB`);
+        setText('ram-priv-val', `${Math.round(mem.totalPrivateMb || 0)} MB`);
+        const cpuPct = typeof mem.totalCpuPercent === 'number' ? mem.totalCpuPercent.toFixed(1) : '0.0';
+        setText('ram-cpu-val', `${cpuPct}%`);
+
+        const sysLoad = typeof mem.systemMemoryLoadPct === 'number' ? `${mem.systemMemoryLoadPct}%` : '--%';
+        const pInfo = pressureLabel(mem.memoryPressureLevel);
+        setText('ram-pressure-val', `${sysLoad} (${pInfo.text})`);
+
+        setText('chip-browser', `Browser: ${Math.round(mem.browserMb || 0)} MB`);
+        setText('chip-gpu', `GPU: ${Math.round(mem.gpuMb || 0)} MB`);
+        setText('chip-renderer', `Renderer: ${Math.round(mem.rendererMb || 0)} MB`);
+        setText('chip-utility', `Utility: ${Math.round(mem.utilityMb || 0)} MB`);
+        setText('chip-procs', `Tiến trình: ${mem.processCount || 0}`);
+
+        const level = (mem.autoCleanLevel ? String(mem.autoCleanLevel) : 'balanced').toLowerCase();
+        bodyEl.querySelectorAll('#autoclean-seg .seg-btn').forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.level === level);
+        });
+      }
+
       async function renderRamPanel() {
-        titleEl.textContent = 'RAM Monitor & Auto-Clean';
+        titleEl.textContent = 'RAM & CPU Monitor (Live)';
+        if (!perfGateOpen) {
+          perfGateOpen = true;
+          invoke('set_perf_panel_open', { open: true });
+        }
+
         const [mem, tabs] = await Promise.all([
           invoke('get_memory_report'),
           invoke('list_tabs'),
@@ -393,29 +458,42 @@
 
         const wsMb = mem ? Math.round(mem.totalWorkingSetMb || 0) : 0;
         const privMb = mem ? Math.round(mem.totalPrivateMb || 0) : 0;
-        const browserMb = mem ? Math.round(mem.browserMb || 0) : 0;
-        const gpuMb = mem ? Math.round(mem.gpuMb || 0) : 0;
-        const rendererMb = mem ? Math.round(mem.rendererMb || 0) : 0;
+        const cpuPct = mem && typeof mem.totalCpuPercent === 'number' ? mem.totalCpuPercent.toFixed(1) : '0.0';
+        const sysLoad = mem && typeof mem.systemMemoryLoadPct === 'number' ? `${mem.systemMemoryLoadPct}%` : '--%';
+        const pInfo = pressureLabel(mem && mem.memoryPressureLevel);
         const level = (mem && mem.autoCleanLevel) ? String(mem.autoCleanLevel).toLowerCase() : 'balanced';
         const tabList = Array.isArray(tabs) ? tabs : [];
+        const tabMemMap = new Map();
+        if (mem && Array.isArray(mem.tabs)) {
+          mem.tabs.forEach((tm) => tabMemMap.set(tm.tabId, tm));
+        }
 
         bodyEl.innerHTML = `
           <div class="metric-grid">
             <div class="metric-box">
-              <div class="metric-val">${wsMb} MB</div>
+              <div class="metric-val" id="ram-ws-val">${wsMb} MB</div>
               <div class="metric-lbl">Working Set Thực Tế</div>
             </div>
             <div class="metric-box">
-              <div class="metric-val">${privMb} MB</div>
+              <div class="metric-val" id="ram-priv-val">${privMb} MB</div>
               <div class="metric-lbl">Private Usage (Win32)</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-val" id="ram-cpu-val">${cpuPct}%</div>
+              <div class="metric-lbl">CPU Trình Duyệt (OS)</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-val" id="ram-pressure-val">${sysLoad} (${pInfo.text})</div>
+              <div class="metric-lbl">Áp Lực RAM Hệ Thống</div>
             </div>
           </div>
 
           <div class="breakdown-row">
-            <span class="chip">Browser: ${browserMb} MB</span>
-            <span class="chip">GPU: ${gpuMb} MB</span>
-            <span class="chip">Renderer: ${rendererMb} MB</span>
-            <span class="chip">Tiến trình: ${mem ? (mem.processCount || 0) : 0}</span>
+            <span class="chip" id="chip-browser">Browser: ${mem ? Math.round(mem.browserMb || 0) : 0} MB</span>
+            <span class="chip" id="chip-gpu">GPU: ${mem ? Math.round(mem.gpuMb || 0) : 0} MB</span>
+            <span class="chip" id="chip-renderer">Renderer: ${mem ? Math.round(mem.rendererMb || 0) : 0} MB</span>
+            <span class="chip" id="chip-utility">Utility: ${mem ? Math.round(mem.utilityMb || 0) : 0} MB</span>
+            <span class="chip" id="chip-procs">Tiến trình: ${mem ? (mem.processCount || 0) : 0}</span>
           </div>
 
           <div>
@@ -434,23 +512,30 @@
           </div>
           <div class="status-note" id="ram-status-note"></div>
 
-          <div class="list-group">
-            ${tabList.length === 0 ? '<div class="empty-state">Chưa có tab nào</div>' : tabList.map((t) => `
-              <div class="list-row">
-                <div class="list-row-info">
-                  <div class="list-row-title">${esc(t.title || t.url || 'Tab')}</div>
-                  <div class="list-row-sub">${t.isSleeping ? 'Đang ngủ' : (t.ramMb ? t.ramMb + ' MB' : 'Hoạt động')}${t.isPlayingAudio ? ' • Audio' : ''}</div>
+          <div class="list-group" id="ram-tab-list">
+            ${tabList.length === 0 ? '<div class="empty-state">Chưa có tab nào</div>' : tabList.map((t) => {
+              const tm = tabMemMap.get(t.id);
+              const shared = (tm && tm.isSharedProcess) || (t.processGroup && String(t.processGroup).toLowerCase().includes('shared'));
+              const ramStr = t.isSleeping
+                ? 'Đang ngủ'
+                : (shared ? `Shared renderer${t.ramMb ? ' (' + t.ramMb + ' MB nhóm)' : ''}` : (t.ramMb ? t.ramMb + ' MB' : 'Hoạt động'));
+              return `
+                <div class="list-row">
+                  <div class="list-row-info">
+                    <div class="list-row-title">${esc(t.title || t.url || 'Tab')}</div>
+                    <div class="list-row-sub">${ramStr}${t.isPlayingAudio ? ' • Audio' : ''}</div>
+                  </div>
+                  ${!t.isSleeping ? `<button class="btn btn-sm" data-sleep-tab="${t.id}">Ngủ</button>` : '<span class="chip chip-accent">Zzz</span>'}
                 </div>
-                ${!t.isSleeping ? `<button class="btn btn-sm" data-sleep-tab="${t.id}">Ngủ</button>` : '<span class="chip chip-accent">Zzz</span>'}
-              </div>
-            `).join('')}
+              `;
+            }).join('')}
           </div>
         `;
 
         bodyEl.querySelectorAll('#autoclean-seg .seg-btn').forEach((btn) => {
           btn.addEventListener('click', async () => {
             await invoke('set_auto_clean_level', { level: btn.dataset.level });
-            renderRamPanel();
+            updateRamMetricsOnly();
           });
         });
 
@@ -458,7 +543,7 @@
         document.getElementById('btn-ram-clean-now')?.addEventListener('click', async () => {
           const freed = await invoke('clean_ram');
           if (note) note.textContent = `Đã thu hồi ${freed || 0} MB bộ nhớ nền.`;
-          setTimeout(renderRamPanel, 400);
+          setTimeout(updateRamMetricsOnly, 350);
         });
         document.getElementById('btn-ram-sleep-all')?.addEventListener('click', async () => {
           await invoke('sleep_all_tabs');
@@ -475,10 +560,14 @@
             renderRamPanel();
           });
         });
+
+        if (ramPollTimer) clearInterval(ramPollTimer);
+        ramPollTimer = setInterval(updateRamMetricsOnly, 1200);
       }
 
       // ---- Panel 2: RustBrowse Shield ----
       async function renderShieldPanel() {
+        stopRamLoop();
         titleEl.textContent = 'RustBrowse Shield';
         const stats = await invoke('get_shield_stats');
         const enabled = stats ? stats.enabled !== false : true;
@@ -540,6 +629,7 @@
 
       // ---- Panel 3: Video Downloader ----
       async function renderVideosPanel() {
+        stopRamLoop();
         titleEl.textContent = 'Trình Tải Video';
         const [videos, downloads, ytdlp, snifferOn] = await Promise.all([
           invoke('get_detected_videos', {}),
@@ -635,14 +725,19 @@
 
       // ---- Panel 4: Settings & Quick Menu ----
       async function renderMenuPanel() {
+        stopRamLoop();
         titleEl.textContent = 'Menu & Cài Đặt';
         const smoothOn = localStorage.getItem('rustbrowse-smooth-scroll') !== 'false';
 
         bodyEl.innerHTML = `
           <div class="list-group">
-            <button class="menu-item" data-nav="rustbrowse://superboost">
-              <span>Super Boost UI & Giao diện</span>
-              <span class="chip chip-accent">Mở</span>
+            <button class="menu-item" id="menu-open-palette">
+              <span>Bảng Lệnh & Tìm Tab Nhanh</span>
+              <span class="chip chip-accent">Ctrl+K</span>
+            </button>
+            <button class="menu-item" data-nav="rustbrowse://health">
+              <span>Sức Khỏe Hệ Thống (Health Monitor)</span>
+              <span class="chip chip-success">Mới</span>
             </button>
             <button class="menu-item" data-nav="rustbrowse://performance">
               <span>Hiệu năng & Bộ nhớ RAM</span>
@@ -650,6 +745,10 @@
             </button>
             <button class="menu-item" data-nav="rustbrowse://privacy">
               <span>Privacy & Anti-Adware Shield</span>
+              <span class="chip">Mở</span>
+            </button>
+            <button class="menu-item" data-nav="rustbrowse://superboost">
+              <span>Super Boost UI & Giao diện</span>
               <span class="chip">Mở</span>
             </button>
             <button class="menu-item" data-nav="rustbrowse://downloads">
@@ -669,13 +768,9 @@
               <span>Gaming Mode (EcoQoS nền)</span>
               <span class="chip">Bật/Tắt</span>
             </button>
-            <button class="menu-item" data-nav="rustbrowse://updates">
-              <span>Trung tâm Cập nhật Tự động</span>
-              <span class="chip chip-accent">Auto</span>
-            </button>
             <button class="menu-item" id="menu-check-update">
-              <span>Kiểm tra Cập nhật Nhanh</span>
-              <span class="chip">Check</span>
+              <span>Kiểm tra Cập nhật RustBrowse</span>
+              <span class="chip chip-accent">Auto</span>
             </button>
             <button class="menu-item" data-nav="rustbrowse://settings">
               <span>Cài đặt nâng cao</span>
@@ -685,6 +780,9 @@
           <div class="status-note" id="menu-status-note"></div>
         `;
 
+        document.getElementById('menu-open-palette')?.addEventListener('click', () => {
+          renderPanel('palette');
+        });
         bodyEl.querySelectorAll('[data-nav]').forEach((btn) => {
           btn.addEventListener('click', () => {
             invoke('create_tab', { url: btn.dataset.nav });
@@ -710,12 +808,145 @@
         });
       }
 
+      // ---- Panel 5: Command Palette (Ctrl+K) — Instant Tab Search & Quick Actions ----
+      async function renderPalettePanel() {
+        stopRamLoop();
+        titleEl.textContent = 'Bảng Lệnh & Tìm Tab (Ctrl+K)';
+
+        const tabs = await invoke('list_tabs');
+        const tabList = Array.isArray(tabs) ? tabs : [];
+
+        const quickActions = [
+          { id: 'new-tab', label: 'Mở Tab Mới', hint: 'Ctrl+T', run: () => invoke('create_tab', { url: 'rustbrowse://home' }) },
+          { id: 'perf', label: 'Mở RAM & Hiệu Năng', hint: 'rustbrowse://performance', run: () => invoke('create_tab', { url: 'rustbrowse://performance' }) },
+          { id: 'health', label: 'Mở Health Monitor & Diagnostics', hint: 'rustbrowse://health', run: () => invoke('create_tab', { url: 'rustbrowse://health' }) },
+          { id: 'updates', label: 'Kiểm Tra Cập Nhật', hint: 'Auto-Updater', run: () => invoke('check_for_updates') },
+          { id: 'downloads', label: 'Quản Lý Tải Xuống', hint: 'Ctrl+J', run: () => invoke('create_tab', { url: 'rustbrowse://downloads' }) },
+          { id: 'settings', label: 'Cài Đặt Trình Duyệt', hint: 'Alt+S', run: () => invoke('create_tab', { url: 'rustbrowse://settings' }) },
+          {
+            id: 'theme',
+            label: 'Đổi Giao Diện Sáng / Tối',
+            hint: 'Bright Glass / Dark',
+            run: () => {
+              const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+              localStorage.setItem('rustbrowse-theme', next);
+              syncTheme();
+            },
+          },
+        ];
+
+        bodyEl.innerHTML = `
+          <input type="text" id="palette-search" class="palette-input" placeholder="Tìm tab đang mở (tiêu đề, URL, tên miền) hoặc lệnh nhanh..." autocomplete="off" spellcheck="false">
+          <div class="list-group" id="palette-results"></div>
+        `;
+
+        const searchInput = document.getElementById('palette-search');
+        const resultsEl = document.getElementById('palette-results');
+        let flatItems = [];
+        let selectedIndex = 0;
+
+        function renderResults(query) {
+          const q = (query || '').trim().toLowerCase();
+          flatItems = [];
+
+          const matchedTabs = tabList.filter((t) => {
+            if (!q) return true;
+            const hay = `${t.title || ''} ${t.url || ''}`.toLowerCase();
+            return hay.includes(q);
+          });
+
+          const matchedActions = quickActions.filter((a) => {
+            if (!q) return true;
+            return `${a.label} ${a.hint}`.toLowerCase().includes(q);
+          });
+
+          let html = '';
+          if (matchedTabs.length > 0) {
+            html += `<div class="palette-section-lbl">Tab đang mở (${matchedTabs.length})</div>`;
+            matchedTabs.forEach((t) => {
+              const idx = flatItems.length;
+              flatItems.push({
+                run: () => invoke('switch_tab', { tabId: t.id }),
+              });
+              html += `
+                <button class="menu-item ${idx === selectedIndex ? 'selected' : ''}" data-pidx="${idx}">
+                  <div class="list-row-info">
+                    <div class="list-row-title">${esc(t.title || t.url || 'Tab')}</div>
+                    <div class="list-row-sub">${esc(t.url || '')}</div>
+                  </div>
+                  <span class="chip">${t.isSleeping ? 'Zzz' : 'Tab'}</span>
+                </button>
+              `;
+            });
+          }
+
+          if (matchedActions.length > 0) {
+            html += `<div class="palette-section-lbl">Lệnh nhanh</div>`;
+            matchedActions.forEach((a) => {
+              const idx = flatItems.length;
+              flatItems.push({ run: a.run });
+              html += `
+                <button class="menu-item ${idx === selectedIndex ? 'selected' : ''}" data-pidx="${idx}">
+                  <span>${esc(a.label)}</span>
+                  <span class="chip chip-accent">${esc(a.hint)}</span>
+                </button>
+              `;
+            });
+          }
+
+          if (flatItems.length === 0) {
+            html = '<div class="empty-state">Không tìm thấy tab hoặc lệnh phù hợp.</div>';
+          }
+
+          resultsEl.innerHTML = html;
+          resultsEl.querySelectorAll('[data-pidx]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              const item = flatItems[Number(btn.dataset.pidx)];
+              if (item) await item.run();
+              closeOverlay();
+            });
+          });
+        }
+
+        renderResults('');
+        setTimeout(() => searchInput && searchInput.focus(), 20);
+
+        searchInput?.addEventListener('input', () => {
+          selectedIndex = 0;
+          renderResults(searchInput.value);
+        });
+
+        searchInput?.addEventListener('keydown', async (e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (flatItems.length > 0) {
+              selectedIndex = (selectedIndex + 1) % flatItems.length;
+              renderResults(searchInput.value);
+            }
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (flatItems.length > 0) {
+              selectedIndex = (selectedIndex - 1 + flatItems.length) % flatItems.length;
+              renderResults(searchInput.value);
+            }
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const item = flatItems[selectedIndex];
+            if (item) {
+              await item.run();
+              closeOverlay();
+            }
+          }
+        });
+      }
+
       async function renderPanel(panel) {
         syncTheme();
         currentPanel = panel || 'ram';
         if (currentPanel === 'shield') return renderShieldPanel();
         if (currentPanel === 'videos') return renderVideosPanel();
         if (currentPanel === 'menu') return renderMenuPanel();
+        if (currentPanel === 'palette') return renderPalettePanel();
         return renderRamPanel();
       }
 
